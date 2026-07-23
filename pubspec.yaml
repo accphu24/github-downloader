@@ -1,0 +1,21 @@
+name: github_downloader
+description: Ứng dụng duyệt và tải file từ GitHub repo
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^1.2.0
+  flutter_web_auth_2: ^3.1.0
+  flutter_secure_storage: ^9.2.2
+  path_provider: ^2.1.3
+
+dev_dependencies:
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
