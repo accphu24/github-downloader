@@ -5,7 +5,10 @@ import '../services/auth_service.dart';
 import '../services/github_service.dart';
 
 class BrowserScreen extends StatefulWidget {
-  const BrowserScreen({super.key});
+  final String? initialOwner;
+  final String? initialRepo;
+
+  const BrowserScreen({super.key, this.initialOwner, this.initialRepo});
 
   @override
   State<BrowserScreen> createState() => _BrowserScreenState();
@@ -13,8 +16,8 @@ class BrowserScreen extends StatefulWidget {
 
 class _BrowserScreenState extends State<BrowserScreen> {
   final _authService = AuthService();
-  final _ownerController = TextEditingController();
-  final _repoController = TextEditingController();
+  late final _ownerController = TextEditingController(text: widget.initialOwner ?? '');
+  late final _repoController = TextEditingController(text: widget.initialRepo ?? '');
 
   GithubService? _githubService;
   List<GithubFile> _files = [];
@@ -35,6 +38,10 @@ class _BrowserScreenState extends State<BrowserScreen> {
       _githubService = GithubService(token: token);
       _username = username;
     });
+    // Nếu được mở từ danh sách repo (đã có sẵn owner/repo), tự động load luôn
+    if (widget.initialOwner != null && widget.initialRepo != null) {
+      await _loadRepo();
+    }
   }
 
   Future<void> _loadRepo() async {
@@ -103,7 +110,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
 
   Future<void> _logout() async {
     await _authService.logout();
-    if (mounted) Navigator.pop(context);
+    if (mounted) Navigator.of(context).popUntil((route) => route.isFirst);
   }
 
   @override

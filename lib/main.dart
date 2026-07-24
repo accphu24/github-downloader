@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'services/auth_service.dart';
 import 'screens/login_screen.dart';
-import 'screens/browser_screen.dart';
+import 'screens/repo_list_screen.dart';
 
 void main() {
   runApp(const MyApp());
@@ -47,6 +47,6 @@ class _StartupGateState extends State<_StartupGate> {
     if (_loggedIn == null) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
-    return _loggedIn! ? const BrowserScreen() : const LoginScreen();
+    return _loggedIn! ? const RepoListScreen() : const LoginScreen();
   }
 }
