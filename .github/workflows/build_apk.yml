@@ -13,7 +13,6 @@ jobs:
 
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.0'
           channel: 'stable'
 
       - name: Tạo scaffold Android (nếu chưa có sẵn trong repo)
@@ -53,9 +52,13 @@ jobs:
               f.write(content)
           EOF
 
-      - name: Cập nhật phiên bản Kotlin (khớp với thư viện đang dùng)
+      - name: Cập nhật phiên bản Kotlin (nếu cần, hỗ trợ cả 2 định dạng)
         run: |
-          sed -i 's/id "org.jetbrains.kotlin.android" version "[^"]*"/id "org.jetbrains.kotlin.android" version "1.9.24"/' android/settings.gradle
+          if [ -f android/settings.gradle ]; then
+            sed -i 's/id "org.jetbrains.kotlin.android" version "[^"]*"/id "org.jetbrains.kotlin.android" version "1.9.24"/' android/settings.gradle
+          elif [ -f android/settings.gradle.kts ]; then
+            sed -i 's/id("org.jetbrains.kotlin.android") version "[^"]*"/id("org.jetbrains.kotlin.android") version "1.9.24"/' android/settings.gradle.kts
+          fi
 
       - name: Cài dependencies
         run: flutter pub get
