@@ -33,36 +33,62 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
     return Scaffold(
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.code, size: 72),
-              const SizedBox(height: 16),
-              const Text(
-                'GitHub Repo Downloader',
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Đăng nhập bằng GitHub để duyệt và tải file từ repo.',
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 32),
-              _loading
-                  ? const CircularProgressIndicator()
-                  : ElevatedButton.icon(
-                      onPressed: _handleLogin,
-                      icon: const Icon(Icons.login),
-                      label: const Text('Đăng nhập bằng GitHub'),
-                      style: ElevatedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-                      ),
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [scheme.primaryContainer.withValues(alpha: 0.6), scheme.surface],
+          ),
+        ),
+        child: SafeArea(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 96,
+                    height: 96,
+                    decoration: BoxDecoration(
+                      color: scheme.primary,
+                      borderRadius: BorderRadius.circular(24),
+                      boxShadow: [
+                        BoxShadow(color: scheme.primary.withValues(alpha: 0.3), blurRadius: 24, offset: const Offset(0, 8)),
+                      ],
                     ),
-            ],
+                    child: Icon(Icons.code_rounded, size: 48, color: scheme.onPrimary),
+                  ),
+                  const SizedBox(height: 24),
+                  Text(
+                    'GitHub Repo Downloader',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Đăng nhập bằng GitHub để duyệt\nvà tải file từ repo của bạn.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: scheme.onSurfaceVariant, height: 1.4),
+                  ),
+                  const SizedBox(height: 40),
+                  SizedBox(
+                    width: double.infinity,
+                    child: _loading
+                        ? const Center(child: CircularProgressIndicator())
+                        : FilledButton.icon(
+                            onPressed: _handleLogin,
+                            icon: const Icon(Icons.login_rounded),
+                            label: const Text('Đăng nhập bằng GitHub'),
+                          ),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
       ),

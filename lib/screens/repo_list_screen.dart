@@ -62,28 +62,28 @@ class _RepoListScreenState extends State<RepoListScreen> {
   }
 
   void _openManualEntry() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const BrowserScreen()),
-    );
+    Navigator.push(context, MaterialPageRoute(builder: (_) => const BrowserScreen()));
   }
 
-  Color _permissionColor(GithubRepo repo) {
-    if (repo.canAdmin) return Colors.deepPurple;
-    if (repo.canPush) return Colors.green;
-    if (repo.canPull) return Colors.blueGrey;
+  Color _permissionColor(BuildContext context, GithubRepo repo) {
+    final scheme = Theme.of(context).colorScheme;
+    if (repo.canAdmin) return scheme.primary;
+    if (repo.canPush) return Colors.teal;
+    if (repo.canPull) return scheme.outline;
     return Colors.grey;
   }
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
     return Scaffold(
       appBar: AppBar(
         title: Text(_username != null ? 'Repo của $_username' : 'Repo của tôi'),
         actions: [
-          IconButton(icon: const Icon(Icons.edit), tooltip: 'Nhập owner/repo thủ công', onPressed: _openManualEntry),
-          IconButton(icon: const Icon(Icons.refresh), onPressed: _loadRepos),
-          IconButton(icon: const Icon(Icons.logout), onPressed: _logout),
+          IconButton(icon: const Icon(Icons.edit_rounded), tooltip: 'Nhập owner/repo thủ công', onPressed: _openManualEntry),
+          IconButton(icon: const Icon(Icons.refresh_rounded), onPressed: _loadRepos),
+          IconButton(icon: const Icon(Icons.logout_rounded), onPressed: _logout),
         ],
       ),
       body: _loading
@@ -95,37 +95,61 @@ class _RepoListScreenState extends State<RepoListScreen> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        Icon(Icons.error_outline_rounded, size: 48, color: scheme.error),
+                        const SizedBox(height: 12),
                         Text(_error!, textAlign: TextAlign.center),
                         const SizedBox(height: 16),
-                        ElevatedButton(onPressed: _loadRepos, child: const Text('Thử lại')),
+                        FilledButton(onPressed: _loadRepos, child: const Text('Thử lại')),
                       ],
                     ),
                   ),
                 )
-              : RefreshIndicator(
-                  onRefresh: _loadRepos,
-                  child: ListView.builder(
-                    itemCount: _repos.length,
-                    itemBuilder: (context, index) {
-                      final repo = _repos[index];
-                      return ListTile(
-                        leading: Icon(repo.private ? Icons.lock : Icons.public),
-                        title: Text(repo.fullName),
-                        subtitle: repo.description != null && repo.description!.isNotEmpty
-                            ? Text(repo.description!, maxLines: 1, overflow: TextOverflow.ellipsis)
-                            : null,
-                        trailing: Chip(
-                          label: Text(
-                            repo.permissionLabel,
-                            style: const TextStyle(color: Colors.white, fontSize: 12),
-                          ),
-                          backgroundColor: _permissionColor(repo),
-                        ),
-                        onTap: () => _openRepo(repo),
-                      );
-                    },
-                  ),
-                ),
+              : _repos.isEmpty
+                  ? Center(
+                      child: Text(
+                        'Không tìm thấy repo nào.',
+                        style: TextStyle(color: scheme.outline),
+                      ),
+                    )
+                  : RefreshIndicator(
+                      onRefresh: _loadRepos,
+                      child: ListView.builder(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        itemCount: _repos.length,
+                        itemBuilder: (context, index) {
+                          final repo = _repos[index];
+                          return Card(
+                            margin: const EdgeInsets.symmetric(vertical: 4),
+                            color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
+                            child: ListTile(
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                              leading: CircleAvatar(
+                                backgroundColor: repo.private ? scheme.errorContainer : scheme.primaryContainer,
+                                child: Icon(
+                                  repo.private ? Icons.lock_rounded : Icons.public_rounded,
+                                  size: 18,
+                                  color: repo.private ? scheme.onErrorContainer : scheme.onPrimaryContainer,
+                                ),
+                              ),
+                              title: Text(repo.fullName, style: const TextStyle(fontWeight: FontWeight.w600)),
+                              subtitle: repo.description != null && repo.description!.isNotEmpty
+                                  ? Text(repo.description!, maxLines: 1, overflow: TextOverflow.ellipsis)
+                                  : null,
+                              trailing: Chip(
+                                label: Text(
+                                  repo.permissionLabel,
+                                  style: const TextStyle(color: Colors.white, fontSize: 11),
+                                ),
+                                backgroundColor: _permissionColor(context, repo),
+                                visualDensity: VisualDensity.compact,
+                                padding: const EdgeInsets.symmetric(horizontal: 4),
+                              ),
+                              onTap: () => _openRepo(repo),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
     );
   }
 }

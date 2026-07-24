@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:archive/archive.dart';
 
 class GithubFile {
   final String name;
@@ -138,5 +139,50 @@ class GithubService {
       throw Exception('Tải file thất bại (mã lỗi ${response.statusCode})');
     }
     return response.bodyBytes;
+  }
+
+  /// Duyệt đệ quy toàn bộ file bên trong 1 thư mục (bao gồm thư mục con).
+  Future<List<GithubFile>> _listAllFilesRecursive(String owner, String repo, String path) async {
+    final entries = await listContents(owner, repo, path: path);
+    final result = <GithubFile>[];
+    for (final entry in entries) {
+      if (entry.type == 'dir') {
+        result.addAll(await _listAllFilesRecursive(owner, repo, entry.path));
+      } else {
+        result.add(entry);
+      }
+    }
+    return result;
+  }
+
+  /// Tải toàn bộ 1 thư mục (kể cả thư mục con) và nén lại thành 1 file .zip.
+  /// [onProgress] báo tiến độ dạng "đã tải x/y file" để hiển thị lên UI.
+  Future<List<int>> downloadFolderAsZip(
+    String owner,
+    String repo,
+    String folderPath, {
+    void Function(int done, int total)? onProgress,
+  }) async {
+    final files = await _listAllFilesRecursive(owner, repo, folderPath);
+    final archive = Archive();
+
+    for (var i = 0; i < files.length; i++) {
+      final file = files[i];
+      if (file.downloadUrl == null) continue;
+      final bytes = await downloadFile(file.downloadUrl!);
+
+      // Giữ nguyên cấu trúc thư mục con bên trong file zip
+      var relativePath = file.path;
+      if (folderPath.isNotEmpty && relativePath.startsWith(folderPath)) {
+        relativePath = relativePath.substring(folderPath.length);
+        if (relativePath.startsWith('/')) relativePath = relativePath.substring(1);
+      }
+
+      archive.addFile(ArchiveFile(relativePath, bytes.length, bytes));
+      onProgress?.call(i + 1, files.length);
+    }
+
+    final zipData = ZipEncoder().encode(archive);
+    return zipData ?? [];
   }
 }

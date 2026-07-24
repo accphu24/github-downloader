@@ -38,7 +38,6 @@ class _BrowserScreenState extends State<BrowserScreen> {
       _githubService = GithubService(token: token);
       _username = username;
     });
-    // Nếu được mở từ danh sách repo (đã có sẵn owner/repo), tự động load luôn
     if (widget.initialOwner != null && widget.initialRepo != null) {
       await _loadRepo();
     }
@@ -102,6 +101,69 @@ class _BrowserScreenState extends State<BrowserScreen> {
     }
   }
 
+  /// Nhấn giữ vào 1 thư mục -> hỏi xác nhận -> tải toàn bộ (kể cả thư mục con)
+  /// và nén thành 1 file .zip duy nhất.
+  Future<void> _handleFolderLongPress(GithubFile folder) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text('Tải "${folder.name}" dạng ZIP?'),
+        content: const Text('Toàn bộ file và thư mục con bên trong sẽ được nén lại thành 1 file .zip.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Huỷ')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Tải ZIP')),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+
+    final progressNotifier = ValueNotifier<String>('Đang chuẩn bị...');
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        content: ValueListenableBuilder<String>(
+          valueListenable: progressNotifier,
+          builder: (context, value, _) => Row(
+            children: [
+              const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 3)),
+              const SizedBox(width: 16),
+              Expanded(child: Text(value)),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    try {
+      final zipBytes = await _githubService!.downloadFolderAsZip(
+        _ownerController.text.trim(),
+        _repoController.text.trim(),
+        folder.path,
+        onProgress: (done, total) => progressNotifier.value = 'Đã tải $done/$total file...',
+      );
+
+      final dir = await getExternalStorageDirectory();
+      final savePath = '${dir!.path}/${folder.name}.zip';
+      await File(savePath).writeAsBytes(zipBytes);
+
+      if (mounted) {
+        Navigator.pop(context); // đóng dialog tiến trình
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Đã lưu: $savePath')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context);
+        _showError(e.toString());
+      }
+    }
+  }
+
   void _showError(String message) {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
@@ -118,7 +180,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(_username != null ? 'Xin chào, $_username' : 'Duyệt repo'),
-        actions: [IconButton(icon: const Icon(Icons.logout), onPressed: _logout)],
+        actions: [IconButton(icon: const Icon(Icons.logout_rounded), onPressed: _logout)],
       ),
       body: Column(
         children: [
@@ -129,46 +191,97 @@ class _BrowserScreenState extends State<BrowserScreen> {
                 Expanded(
                   child: TextField(
                     controller: _ownerController,
-                    decoration: const InputDecoration(labelText: 'Owner', border: OutlineInputBorder()),
+                    decoration: InputDecoration(
+                      labelText: 'Owner',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: TextField(
                     controller: _repoController,
-                    decoration: const InputDecoration(labelText: 'Repo', border: OutlineInputBorder()),
+                    decoration: InputDecoration(
+                      labelText: 'Repo',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 8),
-                ElevatedButton(onPressed: _loadRepo, child: const Text('Mở')),
+                FilledButton(onPressed: _loadRepo, child: const Text('Mở')),
               ],
             ),
           ),
           if (_currentPath.isNotEmpty)
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: Align(alignment: Alignment.centerLeft, child: Text('📁 /$_currentPath')),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  '📁 /$_currentPath',
+                  style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ),
+          if (!_loading && _files.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Mẹo: nhấn giữ vào thư mục để tải cả thư mục dạng .zip',
+                  style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.outline),
+                ),
+              ),
             ),
           if (_loading) const LinearProgressIndicator(),
           Expanded(
-            child: ListView.builder(
-              itemCount: _files.length,
-              itemBuilder: (context, index) {
-                final file = _files[index];
-                final isDir = file.type == 'dir';
-                return ListTile(
-                  leading: Icon(isDir ? Icons.folder : Icons.insert_drive_file),
-                  title: Text(file.name),
-                  trailing: isDir
-                      ? null
-                      : IconButton(
-                          icon: const Icon(Icons.download),
-                          onPressed: () => _downloadFile(file),
+            child: _files.isEmpty && !_loading
+                ? Center(
+                    child: Text(
+                      'Nhập owner/repo rồi bấm "Mở"\nđể bắt đầu duyệt file.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Theme.of(context).colorScheme.outline),
+                    ),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    itemCount: _files.length,
+                    itemBuilder: (context, index) {
+                      final file = _files[index];
+                      final isDir = file.type == 'dir';
+                      return Card(
+                        margin: const EdgeInsets.symmetric(vertical: 4),
+                        elevation: 0,
+                        color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        child: ListTile(
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          leading: CircleAvatar(
+                            backgroundColor: isDir
+                                ? Theme.of(context).colorScheme.primaryContainer
+                                : Theme.of(context).colorScheme.secondaryContainer,
+                            child: Icon(
+                              isDir ? Icons.folder_rounded : Icons.insert_drive_file_rounded,
+                              color: isDir
+                                  ? Theme.of(context).colorScheme.onPrimaryContainer
+                                  : Theme.of(context).colorScheme.onSecondaryContainer,
+                              size: 20,
+                            ),
+                          ),
+                          title: Text(file.name, style: const TextStyle(fontWeight: FontWeight.w500)),
+                          trailing: isDir
+                              ? const Icon(Icons.chevron_right_rounded)
+                              : IconButton(
+                                  icon: const Icon(Icons.download_rounded),
+                                  onPressed: () => _downloadFile(file),
+                                ),
+                          onTap: isDir ? () => _openFolder(file.path) : null,
+                          onLongPress: isDir ? () => _handleFolderLongPress(file) : null,
                         ),
-                  onTap: isDir ? () => _openFolder(file.path) : null,
-                );
-              },
-            ),
+                      );
+                    },
+                  ),
           ),
         ],
       ),
