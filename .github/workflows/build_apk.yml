@@ -41,6 +41,14 @@ jobs:
 
           content = content.replace("</application>", activity_xml + "    </application>")
 
+          # Thêm quyền INTERNET (Flutter mặc định chỉ thêm cho bản debug, release cần khai báo tay)
+          if 'android.permission.INTERNET' not in content:
+              content = content.replace(
+                  "<application",
+                  '<uses-permission android:name="android.permission.INTERNET" />\n    <application',
+                  1,
+              )
+
           # Thêm taskAffinity="" cho MainActivity để tránh lỗi quay vòng khi redirect từ trình duyệt
           if 'android:name=".MainActivity"' in content and 'taskAffinity' not in content.split('android:name=".MainActivity"')[1].split('>')[0]:
               content = content.replace(
