@@ -30,7 +30,7 @@ jobs:
           with open(path) as f:
               content = f.read()
 
-          activity_xml = '''        <activity android:name="com.linusu.flutter_web_auth_2.CallbackActivity" android:exported="true">
+          activity_xml = '''        <activity android:name="com.linusu.flutter_web_auth_2.CallbackActivity" android:exported="true" android:taskAffinity="">
                   <intent-filter android:label="flutter_web_auth_2">
                       <action android:name="android.intent.action.VIEW" />
                       <category android:name="android.intent.category.DEFAULT" />
@@ -41,6 +41,13 @@ jobs:
           '''
 
           content = content.replace("</application>", activity_xml + "    </application>")
+
+          # Thêm taskAffinity="" cho MainActivity để tránh lỗi quay vòng khi redirect từ trình duyệt
+          if 'android:name=".MainActivity"' in content and 'taskAffinity' not in content.split('android:name=".MainActivity"')[1].split('>')[0]:
+              content = content.replace(
+                  'android:name=".MainActivity"',
+                  'android:name=".MainActivity"\n            android:taskAffinity=""',
+              )
 
           with open(path, "w") as f:
               f.write(content)
