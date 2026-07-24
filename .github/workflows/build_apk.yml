@@ -2,7 +2,7 @@ name: Build APK
 
 on:
   push:
-    branches: [main, master]
+    branches: [main]
   workflow_dispatch:
 
 jobs:
@@ -23,9 +23,28 @@ jobs:
             cp -r /tmp/scaffold/android ./android
           fi
 
-      - name: Cấu hình custom URL scheme cho OAuth callback
+      - name: Thêm CallbackActivity cho OAuth vào AndroidManifest.xml
         run: |
-          sed -i '/defaultConfig {/a \        manifestPlaceholders += [callbackScheme: "githubdownloader"]' android/app/build.gradle
+          python3 - <<'EOF'
+          path = "android/app/src/main/AndroidManifest.xml"
+          with open(path) as f:
+              content = f.read()
+
+          activity_xml = '''        <activity android:name="com.linusu.flutter_web_auth_2.CallbackActivity" android:exported="true">
+                  <intent-filter android:label="flutter_web_auth_2">
+                      <action android:name="android.intent.action.VIEW" />
+                      <category android:name="android.intent.category.DEFAULT" />
+                      <category android:name="android.intent.category.BROWSABLE" />
+                      <data android:scheme="githubdownloader" />
+                  </intent-filter>
+              </activity>
+          '''
+
+          content = content.replace("</application>", activity_xml + "    </application>")
+
+          with open(path, "w") as f:
+              f.write(content)
+          EOF
 
       - name: Cập nhật phiên bản Kotlin (khớp với thư viện đang dùng)
         run: |
