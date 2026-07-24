@@ -5,7 +5,7 @@ import 'package:http/http.dart' as http;
 
 class AuthService {
   // TODO: thay bằng Client ID thật lấy từ GitHub OAuth App
-  static const String clientId = 'YOUR_GITHUB_CLIENT_ID';
+  static const String clientId = 'Ov23ct4O7d9Fv0KW1kC8';
 
   // TODO: thay bằng URL backend Railway của bạn (không có dấu "/" ở cuối)
   static const String backendUrl = 'https://your-backend.up.railway.app';
