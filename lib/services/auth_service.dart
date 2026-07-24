@@ -4,11 +4,9 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 
 class AuthService {
-  // TODO: thay bằng Client ID thật lấy từ GitHub OAuth App
   static const String clientId = 'Ov23ct4O7d9Fv0KW1kC8';
 
-  // TODO: thay bằng URL backend Railway của bạn (không có dấu "/" ở cuối)
-  static const String backendUrl = 'https://your-backend.up.railway.app';
+  static const String backendUrl = 'https://web-production-0522b.up.railway.app';
 
   static const String callbackScheme = 'githubdownloader';
   static const String redirectUri = '$callbackScheme://callback';
@@ -17,7 +15,8 @@ class AuthService {
 
   /// Mở trình duyệt để user đăng nhập GitHub, sau đó đổi code lấy access token
   /// thông qua backend (client_secret không bao giờ nằm trong app).
-  Future<bool> login() async {
+  /// Trả về null nếu thành công, hoặc chuỗi mô tả lỗi nếu thất bại.
+  Future<String?> login() async {
     final authUrl = Uri.https('github.com', '/login/oauth/authorize', {
       'client_id': clientId,
       'redirect_uri': redirectUri,
@@ -31,7 +30,7 @@ class AuthService {
       );
 
       final code = Uri.parse(result).queryParameters['code'];
-      if (code == null) return false;
+      if (code == null) return 'Không nhận được mã code từ GitHub (url: $result)';
 
       final response = await http.post(
         Uri.parse('$backendUrl/oauth/callback'),
@@ -39,11 +38,13 @@ class AuthService {
         body: jsonEncode({'code': code}),
       );
 
-      if (response.statusCode != 200) return false;
+      if (response.statusCode != 200) {
+        return 'Backend lỗi ${response.statusCode}: ${response.body}';
+      }
 
       final data = jsonDecode(response.body);
       final token = data['access_token'];
-      if (token == null) return false;
+      if (token == null) return 'Backend không trả về access_token: ${response.body}';
 
       await _storage.write(key: 'github_token', value: token);
 
@@ -58,9 +59,9 @@ class AuthService {
         await _storage.write(key: 'github_email', value: user['email'] ?? '');
       }
 
-      return true;
-    } catch (_) {
-      return false;
+      return null;
+    } catch (e) {
+      return 'Lỗi: $e';
     }
   }
 

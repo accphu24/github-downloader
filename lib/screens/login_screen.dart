@@ -15,18 +15,18 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _handleLogin() async {
     setState(() => _loading = true);
-    final success = await _authService.login();
+    final error = await _authService.login();
     if (!mounted) return;
     setState(() => _loading = false);
 
-    if (success) {
+    if (error == null) {
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => const BrowserScreen()),
       );
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Đăng nhập thất bại, thử lại nhé.')),
+        SnackBar(content: Text(error), duration: const Duration(seconds: 10)),
       );
     }
   }
