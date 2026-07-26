@@ -2,6 +2,15 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:archive/archive.dart';
 
+/// Lỗi riêng cho trường hợp token hết hạn / bị thu hồi (401),
+/// để UI có thể bắt riêng và tự động đăng xuất.
+class GithubUnauthorizedException implements Exception {
+  final String message;
+  GithubUnauthorizedException([this.message = 'Phiên đăng nhập đã hết hạn hoặc bị thu hồi.']);
+  @override
+  String toString() => message;
+}
+
 class GithubFile {
   final String name;
   final String path;
@@ -23,6 +32,16 @@ class GithubFile {
       downloadUrl: json['download_url'],
     );
   }
+
+  /// Dùng cho kết quả từ Git Trees API (tìm kiếm toàn repo), không có download_url sẵn.
+  factory GithubFile.fromTreeEntry(Map<String, dynamic> json) {
+    final path = json['path'] as String;
+    return GithubFile(
+      name: path.split('/').last,
+      path: path,
+      type: json['type'] == 'tree' ? 'dir' : 'file',
+    );
+  }
 }
 
 class GithubRepo {
@@ -31,6 +50,7 @@ class GithubRepo {
   final String fullName;
   final bool private;
   final String? description;
+  final String defaultBranch;
   final bool canAdmin;
   final bool canPush;
   final bool canPull;
@@ -43,6 +63,7 @@ class GithubRepo {
     required this.canAdmin,
     required this.canPush,
     required this.canPull,
+    required this.defaultBranch,
     this.description,
   });
 
@@ -62,11 +83,24 @@ class GithubRepo {
       fullName: json['full_name'] ?? '',
       private: json['private'] ?? false,
       description: json['description'],
+      defaultBranch: json['default_branch'] ?? 'main',
       canAdmin: permissions['admin'] == true,
       canPush: permissions['push'] == true,
       canPull: permissions['pull'] == true,
     );
   }
+}
+
+/// Phần mở rộng cho các loại file xem trước được dạng text.
+const _previewableExtensions = {
+  'txt', 'md', 'json', 'yaml', 'yml', 'dart', 'py', 'js', 'ts', 'jsx', 'tsx',
+  'html', 'css', 'xml', 'gradle', 'properties', 'gitignore', 'env', 'sh',
+  'kt', 'java', 'c', 'cpp', 'h', 'go', 'rs', 'toml', 'ini', 'log', 'csv',
+};
+
+bool isPreviewable(String fileName) {
+  final ext = fileName.contains('.') ? fileName.split('.').last.toLowerCase() : '';
+  return _previewableExtensions.contains(ext);
 }
 
 class GithubService {
@@ -77,6 +111,15 @@ class GithubService {
         if (token != null) 'Authorization': 'Bearer $token',
         'Accept': 'application/vnd.github+json',
       };
+
+  void _checkStatus(http.Response response, String contextMessage) {
+    if (response.statusCode == 401) {
+      throw GithubUnauthorizedException();
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception('$contextMessage (mã lỗi ${response.statusCode})');
+    }
+  }
 
   /// Liệt kê TẤT CẢ repo mà tài khoản đang đăng nhập có quyền truy cập
   /// (sở hữu, được thêm làm collaborator, hoặc thuộc tổ chức), kèm quyền hạn cụ thể.
@@ -91,15 +134,11 @@ class GithubService {
 
     while (url != null) {
       final response = await http.get(url, headers: _headers);
-
-      if (response.statusCode != 200) {
-        throw Exception('Không lấy được danh sách repo (mã lỗi ${response.statusCode}). Kiểm tra lại đăng nhập.');
-      }
+      _checkStatus(response, 'Không lấy được danh sách repo');
 
       final List data = jsonDecode(response.body);
       repos.addAll(data.map((e) => GithubRepo.fromJson(e)));
 
-      // Xử lý phân trang qua header Link: <url>; rel="next"
       url = null;
       final linkHeader = response.headers['link'];
       if (linkHeader != null) {
@@ -121,33 +160,64 @@ class GithubService {
   Future<List<GithubFile>> listContents(String owner, String repo, {String path = ''}) async {
     final url = Uri.https('api.github.com', '/repos/$owner/$repo/contents/$path');
     final response = await http.get(url, headers: _headers);
-
-    if (response.statusCode != 200) {
-      throw Exception(
-        'Không lấy được nội dung repo (mã lỗi ${response.statusCode}). '
-        'Repo có thể là private, không tồn tại, hoặc token không đủ quyền.',
-      );
-    }
+    _checkStatus(response, 'Không lấy được nội dung repo. Repo có thể là private, không tồn tại, hoặc token không đủ quyền.');
 
     final List data = jsonDecode(response.body);
     return data.map((e) => GithubFile.fromJson(e)).toList();
   }
 
+  /// Lấy thông tin (bao gồm download_url) của đúng 1 file, dùng khi chỉ có path
+  /// (ví dụ từ kết quả tìm kiếm toàn repo, chưa có sẵn download_url).
+  Future<GithubFile> getFileMeta(String owner, String repo, String path) async {
+    final url = Uri.https('api.github.com', '/repos/$owner/$repo/contents/$path');
+    final response = await http.get(url, headers: _headers);
+    _checkStatus(response, 'Không lấy được thông tin file');
+    return GithubFile.fromJson(jsonDecode(response.body));
+  }
+
+  /// Lấy default branch của repo (cần cho tìm kiếm toàn repo qua Git Trees API).
+  Future<String> getDefaultBranch(String owner, String repo) async {
+    final url = Uri.https('api.github.com', '/repos/$owner/$repo');
+    final response = await http.get(url, headers: _headers);
+    _checkStatus(response, 'Không lấy được thông tin repo');
+    final data = jsonDecode(response.body);
+    return data['default_branch'] ?? 'main';
+  }
+
+  /// Tìm kiếm file theo tên/đường dẫn trong TOÀN BỘ repo (mọi thư mục con),
+  /// dùng Git Trees API (1 request lấy hết cây thư mục, nhanh hơn nhiều so với
+  /// duyệt đệ quy từng thư mục).
+  Future<List<GithubFile>> searchFilesInRepo(String owner, String repo, String query) async {
+    final branch = await getDefaultBranch(owner, repo);
+    final url = Uri.https('api.github.com', '/repos/$owner/$repo/git/trees/$branch', {'recursive': '1'});
+    final response = await http.get(url, headers: _headers);
+    _checkStatus(response, 'Không tìm kiếm được trong repo');
+
+    final data = jsonDecode(response.body);
+    final List tree = data['tree'] ?? [];
+    final lowerQuery = query.toLowerCase();
+
+    return tree
+        .where((e) => e['type'] == 'blob' && (e['path'] as String).toLowerCase().contains(lowerQuery))
+        .map((e) => GithubFile.fromTreeEntry(e))
+        .toList();
+  }
+
   Future<List<int>> downloadFile(String downloadUrl) async {
     final response = await http.get(Uri.parse(downloadUrl), headers: _headers);
-    if (response.statusCode != 200) {
-      throw Exception('Tải file thất bại (mã lỗi ${response.statusCode})');
-    }
+    _checkStatus(response, 'Tải file thất bại');
     return response.bodyBytes;
   }
 
   /// Duyệt đệ quy toàn bộ file bên trong 1 thư mục (bao gồm thư mục con).
-  Future<List<GithubFile>> _listAllFilesRecursive(String owner, String repo, String path) async {
+  /// Public để UI có thể gọi trước nhằm đếm số lượng file (cảnh báo nếu quá nhiều)
+  /// trước khi thực sự tải xuống.
+  Future<List<GithubFile>> listAllFilesRecursive(String owner, String repo, String path) async {
     final entries = await listContents(owner, repo, path: path);
     final result = <GithubFile>[];
     for (final entry in entries) {
       if (entry.type == 'dir') {
-        result.addAll(await _listAllFilesRecursive(owner, repo, entry.path));
+        result.addAll(await listAllFilesRecursive(owner, repo, entry.path));
       } else {
         result.add(entry);
       }
@@ -155,15 +225,13 @@ class GithubService {
     return result;
   }
 
-  /// Tải toàn bộ 1 thư mục (kể cả thư mục con) và nén lại thành 1 file .zip.
-  /// [onProgress] báo tiến độ dạng "đã tải x/y file" để hiển thị lên UI.
-  Future<List<int>> downloadFolderAsZip(
-    String owner,
-    String repo,
+  /// Tải danh sách file đã biết trước (từ listAllFilesRecursive) và nén thành zip.
+  /// Tách riêng khỏi bước liệt kê để UI có thể đếm số file và cảnh báo trước khi tải.
+  Future<List<int>> zipFiles(
+    List<GithubFile> files,
     String folderPath, {
     void Function(int done, int total)? onProgress,
   }) async {
-    final files = await _listAllFilesRecursive(owner, repo, folderPath);
     final archive = Archive();
 
     for (var i = 0; i < files.length; i++) {
@@ -171,7 +239,6 @@ class GithubService {
       if (file.downloadUrl == null) continue;
       final bytes = await downloadFile(file.downloadUrl!);
 
-      // Giữ nguyên cấu trúc thư mục con bên trong file zip
       var relativePath = file.path;
       if (folderPath.isNotEmpty && relativePath.startsWith(folderPath)) {
         relativePath = relativePath.substring(folderPath.length);
