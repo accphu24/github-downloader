@@ -5,8 +5,37 @@ import 'package:path_provider/path_provider.dart';
 import '../services/auth_service.dart';
 import '../services/github_service.dart';
 import 'login_screen.dart';
+import 'actions_screen.dart';
+import 'commits_screen.dart';
 
 const int _bigFolderWarningThreshold = 200;
+const int _bigDateSortWarningThreshold = 50;
+
+enum SortOption { nameAsc, nameDesc, sizeAsc, sizeDesc, dateNewest, dateOldest }
+
+String _sortLabel(SortOption option) {
+  switch (option) {
+    case SortOption.nameAsc:
+      return 'Tên (A-Z)';
+    case SortOption.nameDesc:
+      return 'Tên (Z-A)';
+    case SortOption.sizeAsc:
+      return 'Dung lượng (nhỏ → lớn)';
+    case SortOption.sizeDesc:
+      return 'Dung lượng (lớn → nhỏ)';
+    case SortOption.dateNewest:
+      return 'Ngày sửa (mới nhất)';
+    case SortOption.dateOldest:
+      return 'Ngày sửa (cũ nhất)';
+  }
+}
+
+String _formatSize(int? bytes) {
+  if (bytes == null) return '';
+  if (bytes < 1024) return '$bytes B';
+  if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+  return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+}
 
 class BrowserScreen extends StatefulWidget {
   final String? initialOwner;
@@ -33,6 +62,10 @@ class _BrowserScreenState extends State<BrowserScreen> {
   bool _searching = false;
   List<GithubFile> _searchResults = [];
   bool _searchLoading = false;
+
+  SortOption _sortOption = SortOption.nameAsc;
+  final Map<String, DateTime> _fileDates = {};
+  bool _loadingDates = false;
 
   @override
   void initState() {
@@ -85,6 +118,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
     setState(() {
       _loading = true;
       _currentPath = '';
+      _fileDates.clear();
     });
     final files = await _guard(() => _githubService!.listContents(
           _ownerController.text.trim(),
@@ -95,7 +129,10 @@ class _BrowserScreenState extends State<BrowserScreen> {
   }
 
   Future<void> _openFolder(String path) async {
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _fileDates.clear();
+    });
     final files = await _guard(() => _githubService!.listContents(
           _ownerController.text.trim(),
           _repoController.text.trim(),
@@ -132,7 +169,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
       builder: (ctx) => const AlertDialog(content: SizedBox(height: 60, child: Center(child: CircularProgressIndicator()))),
     );
     final bytes = await _guard(() => _githubService!.downloadFile(file.downloadUrl!));
-    if (mounted) Navigator.pop(context); // đóng dialog loading
+    if (mounted) Navigator.pop(context);
 
     if (bytes == null || !mounted) return;
 
@@ -187,9 +224,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
     );
   }
 
-  /// Nhấn giữ vào 1 thư mục -> đếm số file trước, cảnh báo nếu quá nhiều,
-  /// rồi mới tải toàn bộ (kể cả thư mục con) và nén thành 1 file .zip.
-  Future<void> _handleFolderLongPress(GithubFile folder) async {
+  /// Logic dùng chung để tải 1 thư mục (hoặc cả repo, khi path rỗng) dạng .zip.
+  Future<void> _downloadAsZip({required String path, required String displayName}) async {
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -207,12 +243,12 @@ class _BrowserScreenState extends State<BrowserScreen> {
 
     final owner = _ownerController.text.trim();
     final repo = _repoController.text.trim();
-    final files = await _guard(() => _githubService!.listAllFilesRecursive(owner, repo, folder.path));
-    if (mounted) Navigator.pop(context); // đóng dialog đếm file
+    final files = await _guard(() => _githubService!.listAllFilesRecursive(owner, repo, path));
+    if (mounted) Navigator.pop(context);
     if (files == null || !mounted) return;
 
     if (files.isEmpty) {
-      _showError('Thư mục này không có file nào.');
+      _showError('Không có file nào để tải.');
       return;
     }
 
@@ -222,11 +258,11 @@ class _BrowserScreenState extends State<BrowserScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text('Tải "${folder.name}" dạng ZIP?'),
+        title: Text('Tải "$displayName" dạng ZIP?'),
         content: Text(
           isBig
-              ? 'Thư mục này có ${files.length} file, khá nhiều nên có thể mất vài phút và dễ chạm giới hạn API của GitHub. Vẫn muốn tiếp tục?'
-              : 'Thư mục này có ${files.length} file. Toàn bộ sẽ được nén thành 1 file .zip.',
+              ? 'Có ${files.length} file, khá nhiều nên có thể mất vài phút và dễ chạm giới hạn API của GitHub. Vẫn muốn tiếp tục?'
+              : 'Có ${files.length} file. Toàn bộ sẽ được nén thành 1 file .zip.',
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Huỷ')),
@@ -258,21 +294,27 @@ class _BrowserScreenState extends State<BrowserScreen> {
 
     final zipBytes = await _guard(() => _githubService!.zipFiles(
           files,
-          folder.path,
+          path,
           onProgress: (done, total) => progressNotifier.value = 'Đã tải $done/$total file...',
         ));
 
-    if (mounted) Navigator.pop(context); // đóng dialog tiến trình
+    if (mounted) Navigator.pop(context);
     if (zipBytes == null) return;
 
     final dir = await getExternalStorageDirectory();
-    final savePath = '${dir!.path}/${folder.name}.zip';
+    final savePath = '${dir!.path}/$displayName.zip';
     await File(savePath).writeAsBytes(zipBytes);
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Đã lưu: $savePath')));
     }
   }
+
+  Future<void> _handleFolderLongPress(GithubFile folder) =>
+      _downloadAsZip(path: folder.path, displayName: folder.name);
+
+  Future<void> _downloadWholeRepoAsZip() =>
+      _downloadAsZip(path: '', displayName: _repoController.text.trim());
 
   Future<void> _runSearch(String query) async {
     if (query.trim().isEmpty) {
@@ -301,6 +343,78 @@ class _BrowserScreenState extends State<BrowserScreen> {
     }
   }
 
+  /// Chọn kiểu sắp xếp. Nếu chọn theo ngày mà chưa có dữ liệu ngày, sẽ tự tải trước.
+  Future<void> _selectSort(SortOption option) async {
+    setState(() => _sortOption = option);
+
+    final needsDate = option == SortOption.dateNewest || option == SortOption.dateOldest;
+    if (!needsDate) return;
+
+    final filesNeedingDate = _files.where((f) => f.type == 'file' && !_fileDates.containsKey(f.path)).toList();
+    if (filesNeedingDate.isEmpty) return;
+
+    if (filesNeedingDate.length > _bigDateSortWarningThreshold) {
+      final proceed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('Khá nhiều file'),
+          content: Text(
+            'Thư mục này có ${filesNeedingDate.length} file. Lấy ngày sửa đổi cho từng file sẽ tốn nhiều request API và có thể mất một lúc. Vẫn muốn tiếp tục?',
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Huỷ')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Tiếp tục')),
+          ],
+        ),
+      );
+      if (proceed != true) return;
+    }
+
+    setState(() => _loadingDates = true);
+    for (final file in filesNeedingDate) {
+      final date = await _guard(() => _githubService!.getLastCommitDate(
+            _ownerController.text.trim(),
+            _repoController.text.trim(),
+            file.path,
+          ));
+      if (date != null) _fileDates[file.path] = date;
+    }
+    if (mounted) setState(() => _loadingDates = false);
+  }
+
+  /// Luôn đưa thư mục lên trước, sau đó sắp xếp file theo tiêu chí đang chọn.
+  List<GithubFile> get _sortedFiles {
+    final dirs = _files.where((f) => f.type == 'dir').toList()
+      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    final files = _files.where((f) => f.type == 'file').toList();
+
+    switch (_sortOption) {
+      case SortOption.nameAsc:
+        files.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+        break;
+      case SortOption.nameDesc:
+        files.sort((a, b) => b.name.toLowerCase().compareTo(a.name.toLowerCase()));
+        break;
+      case SortOption.sizeAsc:
+        files.sort((a, b) => (a.size ?? 0).compareTo(b.size ?? 0));
+        break;
+      case SortOption.sizeDesc:
+        files.sort((a, b) => (b.size ?? 0).compareTo(a.size ?? 0));
+        break;
+      case SortOption.dateNewest:
+        files.sort((a, b) =>
+            (_fileDates[b.path] ?? DateTime(0)).compareTo(_fileDates[a.path] ?? DateTime(0)));
+        break;
+      case SortOption.dateOldest:
+        files.sort((a, b) =>
+            (_fileDates[a.path] ?? DateTime(0)).compareTo(_fileDates[b.path] ?? DateTime(0)));
+        break;
+    }
+
+    return [...dirs, ...files];
+  }
+
   void _showError(String message) {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
@@ -321,7 +435,35 @@ class _BrowserScreenState extends State<BrowserScreen> {
       appBar: AppBar(
         title: Text(_username != null ? 'Xin chào, $_username' : 'Duyệt repo'),
         actions: [
-          if (repoIsOpen)
+          if (repoIsOpen) ...[
+            IconButton(
+              icon: const Icon(Icons.play_circle_outline_rounded),
+              tooltip: 'Trạng thái GitHub Actions',
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ActionsScreen(
+                    owner: _ownerController.text.trim(),
+                    repo: _repoController.text.trim(),
+                    githubService: _githubService!,
+                  ),
+                ),
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.history_rounded),
+              tooltip: 'Lịch sử Commit',
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => CommitsScreen(
+                    owner: _ownerController.text.trim(),
+                    repo: _repoController.text.trim(),
+                    githubService: _githubService!,
+                  ),
+                ),
+              ),
+            ),
             IconButton(
               icon: Icon(_searching ? Icons.close_rounded : Icons.search_rounded),
               tooltip: 'Tìm file trong toàn repo',
@@ -333,9 +475,17 @@ class _BrowserScreenState extends State<BrowserScreen> {
                 }
               }),
             ),
+          ],
           IconButton(icon: const Icon(Icons.logout_rounded), onPressed: _logout),
         ],
       ),
+      floatingActionButton: repoIsOpen && !_searching
+          ? FloatingActionButton.extended(
+              onPressed: _downloadWholeRepoAsZip,
+              icon: const Icon(Icons.folder_zip_rounded),
+              label: const Text('Tải cả repo'),
+            )
+          : null,
       body: Column(
         children: [
           Padding(
@@ -393,16 +543,36 @@ class _BrowserScreenState extends State<BrowserScreen> {
             ),
           if (!_loading && _files.isNotEmpty && !_searching)
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'Mẹo: nhấn giữ vào thư mục để tải cả thư mục dạng .zip',
-                  style: TextStyle(fontSize: 12, color: scheme.outline),
-                ),
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Nhấn giữ thư mục để tải .zip',
+                      style: TextStyle(fontSize: 12, color: scheme.outline),
+                    ),
+                  ),
+                  PopupMenuButton<SortOption>(
+                    tooltip: 'Sắp xếp',
+                    onSelected: _selectSort,
+                    icon: Icon(Icons.sort_rounded, size: 20, color: scheme.primary),
+                    itemBuilder: (ctx) => SortOption.values
+                        .map((o) => PopupMenuItem(
+                              value: o,
+                              child: Row(
+                                children: [
+                                  if (_sortOption == o) Icon(Icons.check_rounded, size: 16, color: scheme.primary),
+                                  if (_sortOption == o) const SizedBox(width: 6),
+                                  Text(_sortLabel(o)),
+                                ],
+                              ),
+                            ))
+                        .toList(),
+                  ),
+                ],
               ),
             ),
-          if (_loading || _searchLoading) const LinearProgressIndicator(),
+          if (_loading || _searchLoading || _loadingDates) const LinearProgressIndicator(),
           Expanded(
             child: _searching
                 ? _buildSearchResults(scheme)
@@ -465,13 +635,16 @@ class _BrowserScreenState extends State<BrowserScreen> {
   }
 
   Widget _buildFileList(ColorScheme scheme) {
+    final sorted = _sortedFiles;
     return ListView.builder(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      itemCount: _files.length,
+      itemCount: sorted.length,
       itemBuilder: (context, index) {
-        final file = _files[index];
+        final file = sorted[index];
         final isDir = file.type == 'dir';
         final canPreview = !isDir && isPreviewable(file.name);
+        final dateStr = _fileDates.containsKey(file.path) ? _formatSizeOrDate(file) : null;
+
         return Card(
           margin: const EdgeInsets.symmetric(vertical: 4),
           elevation: 0,
@@ -488,6 +661,12 @@ class _BrowserScreenState extends State<BrowserScreen> {
               ),
             ),
             title: Text(file.name, style: const TextStyle(fontWeight: FontWeight.w500)),
+            subtitle: !isDir
+                ? Text(
+                    dateStr ?? _formatSize(file.size),
+                    style: TextStyle(fontSize: 12, color: scheme.outline),
+                  )
+                : null,
             trailing: isDir
                 ? const Icon(Icons.chevron_right_rounded)
                 : Row(
@@ -504,5 +683,12 @@ class _BrowserScreenState extends State<BrowserScreen> {
         );
       },
     );
+  }
+
+  String _formatSizeOrDate(GithubFile file) {
+    final date = _fileDates[file.path];
+    if (date == null) return _formatSize(file.size);
+    final d = date.toLocal();
+    return '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year} · ${_formatSize(file.size)}';
   }
 }

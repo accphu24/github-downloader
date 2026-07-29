@@ -16,12 +16,14 @@ class GithubFile {
   final String path;
   final String type; // 'file' hoặc 'dir'
   final String? downloadUrl;
+  final int? size;
 
   GithubFile({
     required this.name,
     required this.path,
     required this.type,
     this.downloadUrl,
+    this.size,
   });
 
   factory GithubFile.fromJson(Map<String, dynamic> json) {
@@ -30,6 +32,7 @@ class GithubFile {
       path: json['path'],
       type: json['type'],
       downloadUrl: json['download_url'],
+      size: json['size'],
     );
   }
 
@@ -40,6 +43,7 @@ class GithubFile {
       name: path.split('/').last,
       path: path,
       type: json['type'] == 'tree' ? 'dir' : 'file',
+      size: json['size'],
     );
   }
 }
@@ -101,6 +105,66 @@ const _previewableExtensions = {
 bool isPreviewable(String fileName) {
   final ext = fileName.contains('.') ? fileName.split('.').last.toLowerCase() : '';
   return _previewableExtensions.contains(ext);
+}
+
+class WorkflowRun {
+  final String name;
+  final String status; // queued, in_progress, completed
+  final String? conclusion; // success, failure, cancelled, ...
+  final String branch;
+  final String commitMessage;
+  final DateTime createdAt;
+  final String htmlUrl;
+
+  WorkflowRun({
+    required this.name,
+    required this.status,
+    required this.branch,
+    required this.commitMessage,
+    required this.createdAt,
+    required this.htmlUrl,
+    this.conclusion,
+  });
+
+  factory WorkflowRun.fromJson(Map<String, dynamic> json) {
+    return WorkflowRun(
+      name: json['name'] ?? json['display_title'] ?? 'Workflow',
+      status: json['status'] ?? '',
+      conclusion: json['conclusion'],
+      branch: json['head_branch'] ?? '',
+      commitMessage: json['head_commit']?['message'] ?? json['display_title'] ?? '',
+      createdAt: DateTime.parse(json['created_at']),
+      htmlUrl: json['html_url'] ?? '',
+    );
+  }
+}
+
+class GithubCommit {
+  final String sha;
+  final String message;
+  final String authorName;
+  final DateTime date;
+  final String htmlUrl;
+
+  GithubCommit({
+    required this.sha,
+    required this.message,
+    required this.authorName,
+    required this.date,
+    required this.htmlUrl,
+  });
+
+  factory GithubCommit.fromJson(Map<String, dynamic> json) {
+    final commit = json['commit'] ?? {};
+    final author = commit['author'] ?? {};
+    return GithubCommit(
+      sha: json['sha'] ?? '',
+      message: commit['message'] ?? '',
+      authorName: json['author']?['login'] ?? author['name'] ?? 'Không rõ',
+      date: DateTime.parse(author['date'] ?? DateTime.now().toIso8601String()),
+      htmlUrl: json['html_url'] ?? '',
+    );
+  }
 }
 
 class GithubService {
@@ -251,5 +315,36 @@ class GithubService {
 
     final zipData = ZipEncoder().encode(archive);
     return zipData ?? [];
+  }
+
+  /// Lấy danh sách các lần chạy GitHub Actions gần nhất (build/CI).
+  Future<List<WorkflowRun>> listWorkflowRuns(String owner, String repo) async {
+    final url = Uri.https('api.github.com', '/repos/$owner/$repo/actions/runs', {'per_page': '30'});
+    final response = await http.get(url, headers: _headers);
+    _checkStatus(response, 'Không lấy được trạng thái Actions');
+    final data = jsonDecode(response.body);
+    final List runs = data['workflow_runs'] ?? [];
+    return runs.map((e) => WorkflowRun.fromJson(e)).toList();
+  }
+
+  /// Lấy lịch sử commit gần nhất của repo.
+  Future<List<GithubCommit>> listCommits(String owner, String repo) async {
+    final url = Uri.https('api.github.com', '/repos/$owner/$repo/commits', {'per_page': '30'});
+    final response = await http.get(url, headers: _headers);
+    _checkStatus(response, 'Không lấy được lịch sử commit');
+    final List data = jsonDecode(response.body);
+    return data.map((e) => GithubCommit.fromJson(e)).toList();
+  }
+
+  /// Lấy ngày sửa đổi (commit) gần nhất của 1 file cụ thể.
+  /// Lưu ý: mỗi lần gọi tốn 1 request API, nên chỉ dùng khi cần (vd: sort theo ngày).
+  Future<DateTime?> getLastCommitDate(String owner, String repo, String path) async {
+    final url = Uri.https('api.github.com', '/repos/$owner/$repo/commits', {'path': path, 'per_page': '1'});
+    final response = await http.get(url, headers: _headers);
+    _checkStatus(response, 'Không lấy được ngày sửa đổi');
+    final List data = jsonDecode(response.body);
+    if (data.isEmpty) return null;
+    final dateStr = data[0]['commit']?['author']?['date'];
+    return dateStr != null ? DateTime.parse(dateStr) : null;
   }
 }
