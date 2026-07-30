@@ -108,6 +108,7 @@ bool isPreviewable(String fileName) {
 }
 
 class WorkflowRun {
+  final int id;
   final String name;
   final String status; // queued, in_progress, completed
   final String? conclusion; // success, failure, cancelled, ...
@@ -117,6 +118,7 @@ class WorkflowRun {
   final String htmlUrl;
 
   WorkflowRun({
+    required this.id,
     required this.name,
     required this.status,
     required this.branch,
@@ -128,6 +130,7 @@ class WorkflowRun {
 
   factory WorkflowRun.fromJson(Map<String, dynamic> json) {
     return WorkflowRun(
+      id: json['id'],
       name: json['name'] ?? json['display_title'] ?? 'Workflow',
       status: json['status'] ?? '',
       conclusion: json['conclusion'],
@@ -165,6 +168,73 @@ class GithubCommit {
       htmlUrl: json['html_url'] ?? '',
     );
   }
+}
+
+class WorkflowStep {
+  final String name;
+  final int number;
+  final String status;
+  final String? conclusion;
+
+  WorkflowStep({required this.name, required this.number, required this.status, this.conclusion});
+
+  factory WorkflowStep.fromJson(Map<String, dynamic> json) => WorkflowStep(
+        name: json['name'] ?? '',
+        number: json['number'] ?? 0,
+        status: json['status'] ?? '',
+        conclusion: json['conclusion'],
+      );
+}
+
+class WorkflowJob {
+  final int id;
+  final String name;
+  final String status;
+  final String? conclusion;
+  final List<WorkflowStep> steps;
+
+  WorkflowJob({
+    required this.id,
+    required this.name,
+    required this.status,
+    required this.steps,
+    this.conclusion,
+  });
+
+  factory WorkflowJob.fromJson(Map<String, dynamic> json) {
+    final List stepsJson = json['steps'] ?? [];
+    return WorkflowJob(
+      id: json['id'],
+      name: json['name'] ?? '',
+      status: json['status'] ?? '',
+      conclusion: json['conclusion'],
+      steps: stepsJson.map((e) => WorkflowStep.fromJson(e)).toList(),
+    );
+  }
+}
+
+class Artifact {
+  final int id;
+  final String name;
+  final int sizeInBytes;
+  final String archiveDownloadUrl;
+  final bool expired;
+
+  Artifact({
+    required this.id,
+    required this.name,
+    required this.sizeInBytes,
+    required this.archiveDownloadUrl,
+    required this.expired,
+  });
+
+  factory Artifact.fromJson(Map<String, dynamic> json) => Artifact(
+        id: json['id'],
+        name: json['name'] ?? '',
+        sizeInBytes: json['size_in_bytes'] ?? 0,
+        archiveDownloadUrl: json['archive_download_url'] ?? '',
+        expired: json['expired'] ?? false,
+      );
 }
 
 class GithubService {
@@ -346,5 +416,40 @@ class GithubService {
     if (data.isEmpty) return null;
     final dateStr = data[0]['commit']?['author']?['date'];
     return dateStr != null ? DateTime.parse(dateStr) : null;
+  }
+
+  /// Lấy danh sách job (và các bước/step bên trong) của 1 lần chạy Actions.
+  Future<List<WorkflowJob>> listJobsForRun(String owner, String repo, int runId) async {
+    final url = Uri.https('api.github.com', '/repos/$owner/$repo/actions/runs/$runId/jobs');
+    final response = await http.get(url, headers: _headers);
+    _checkStatus(response, 'Không lấy được danh sách job');
+    final data = jsonDecode(response.body);
+    final List jobs = data['jobs'] ?? [];
+    return jobs.map((e) => WorkflowJob.fromJson(e)).toList();
+  }
+
+  /// Lấy toàn bộ log dạng text của 1 job.
+  Future<String> getJobLogs(String owner, String repo, int jobId) async {
+    final url = Uri.https('api.github.com', '/repos/$owner/$repo/actions/jobs/$jobId/logs');
+    final response = await http.get(url, headers: _headers);
+    _checkStatus(response, 'Không lấy được log');
+    return response.body;
+  }
+
+  /// Lấy danh sách artifact (file build ra, ví dụ APK) của 1 lần chạy Actions.
+  Future<List<Artifact>> listArtifacts(String owner, String repo, int runId) async {
+    final url = Uri.https('api.github.com', '/repos/$owner/$repo/actions/runs/$runId/artifacts');
+    final response = await http.get(url, headers: _headers);
+    _checkStatus(response, 'Không lấy được artifact');
+    final data = jsonDecode(response.body);
+    final List artifacts = data['artifacts'] ?? [];
+    return artifacts.map((e) => Artifact.fromJson(e)).toList();
+  }
+
+  /// Tải nội dung artifact (GitHub luôn đóng gói dạng .zip, kể cả khi bên trong chỉ có 1 file).
+  Future<List<int>> downloadArtifactZip(String archiveDownloadUrl) async {
+    final response = await http.get(Uri.parse(archiveDownloadUrl), headers: _headers);
+    _checkStatus(response, 'Tải artifact thất bại');
+    return response.bodyBytes;
   }
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/github_service.dart';
 import '../utils/time_ago.dart';
+import 'run_detail_screen.dart';
 
 class ActionsScreen extends StatefulWidget {
   final String owner;
@@ -100,12 +101,26 @@ class _ActionsScreenState extends State<ActionsScreen> {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
-                              trailing: const Icon(Icons.open_in_new_rounded, size: 18),
-                              onTap: () {
-                                if (run.htmlUrl.isNotEmpty) {
-                                  launchUrl(Uri.parse(run.htmlUrl), mode: LaunchMode.externalApplication);
-                                }
-                              },
+                              trailing: IconButton(
+                                icon: const Icon(Icons.open_in_new_rounded, size: 18),
+                                tooltip: 'Mở trên trình duyệt',
+                                onPressed: () {
+                                  if (run.htmlUrl.isNotEmpty) {
+                                    launchUrl(Uri.parse(run.htmlUrl), mode: LaunchMode.externalApplication);
+                                  }
+                                },
+                              ),
+                              onTap: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => RunDetailScreen(
+                                    owner: widget.owner,
+                                    repo: widget.repo,
+                                    run: run,
+                                    githubService: widget.githubService,
+                                  ),
+                                ),
+                              ),
                             ),
                           );
                         },
