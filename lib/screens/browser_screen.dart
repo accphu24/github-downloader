@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
@@ -7,6 +6,7 @@ import '../services/github_service.dart';
 import 'login_screen.dart';
 import 'actions_screen.dart';
 import 'commits_screen.dart';
+import '../widgets/file_editor_sheet.dart';
 
 const int _bigFolderWarningThreshold = 200;
 const int _bigDateSortWarningThreshold = 50;
@@ -164,64 +164,22 @@ class _BrowserScreenState extends State<BrowserScreen> {
 
   Future<void> _previewFile(GithubFile file) async {
     if (file.downloadUrl == null) return;
-    showDialog(
-      context: context,
-      builder: (ctx) => const AlertDialog(content: SizedBox(height: 60, child: Center(child: CircularProgressIndicator()))),
+    final saved = await FileEditorSheet.show(
+      context,
+      owner: _ownerController.text.trim(),
+      repo: _repoController.text.trim(),
+      file: file,
+      githubService: _githubService!,
+      canEdit: true, // GitHub sẽ tự từ chối (403) nếu tài khoản không có quyền ghi
     );
-    final bytes = await _guard(() => _githubService!.downloadFile(file.downloadUrl!));
-    if (mounted) Navigator.pop(context);
-
-    if (bytes == null || !mounted) return;
-
-    String content;
-    try {
-      content = utf8.decode(bytes);
-    } catch (_) {
-      content = '(Không thể hiển thị - có thể là file nhị phân)';
+    if (saved == true && mounted) {
+      // Nội dung file đã đổi -> tải lại danh sách hiện tại để cập nhật sha/size mới nhất
+      if (_currentPath.isEmpty) {
+        await _loadRepo();
+      } else {
+        await _openFolder(_currentPath);
+      }
     }
-    const maxChars = 8000;
-    final truncated = content.length > maxChars;
-    if (truncated) content = '${content.substring(0, maxChars)}\n\n... (đã cắt bớt, tải file để xem đầy đủ)';
-
-    if (!mounted) return;
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) => DraggableScrollableSheet(
-        initialChildSize: 0.75,
-        minChildSize: 0.4,
-        maxChildSize: 0.95,
-        expand: false,
-        builder: (ctx, scrollController) => Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  Expanded(child: Text(file.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16))),
-                  IconButton(
-                    icon: const Icon(Icons.download_rounded),
-                    onPressed: () {
-                      Navigator.pop(ctx);
-                      _downloadFile(file);
-                    },
-                  ),
-                ],
-              ),
-            ),
-            const Divider(height: 1),
-            Expanded(
-              child: SingleChildScrollView(
-                controller: scrollController,
-                padding: const EdgeInsets.all(16),
-                child: SelectableText(content, style: const TextStyle(fontFamily: 'monospace', fontSize: 13)),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 
   /// Logic dùng chung để tải 1 thư mục (hoặc cả repo, khi path rỗng) dạng .zip.

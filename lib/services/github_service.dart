@@ -17,6 +17,7 @@ class GithubFile {
   final String type; // 'file' hoặc 'dir'
   final String? downloadUrl;
   final int? size;
+  final String? sha;
 
   GithubFile({
     required this.name,
@@ -24,6 +25,7 @@ class GithubFile {
     required this.type,
     this.downloadUrl,
     this.size,
+    this.sha,
   });
 
   factory GithubFile.fromJson(Map<String, dynamic> json) {
@@ -33,6 +35,7 @@ class GithubFile {
       type: json['type'],
       downloadUrl: json['download_url'],
       size: json['size'],
+      sha: json['sha'],
     );
   }
 
@@ -451,5 +454,32 @@ class GithubService {
     final response = await http.get(Uri.parse(archiveDownloadUrl), headers: _headers);
     _checkStatus(response, 'Tải artifact thất bại');
     return response.bodyBytes;
+  }
+
+  /// Cập nhật nội dung 1 file và commit thẳng lên GitHub.
+  /// Cần [sha] hiện tại của file (lấy từ GithubFile.sha) để tránh ghi đè nhầm nếu file
+  /// đã bị người khác thay đổi trong lúc bạn đang sửa.
+  Future<void> updateFile(
+    String owner,
+    String repo,
+    String path,
+    String newContent,
+    String sha, {
+    String? commitMessage,
+  }) async {
+    final url = Uri.https('api.github.com', '/repos/$owner/$repo/contents/$path');
+    final response = await http.put(
+      url,
+      headers: {..._headers, 'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'message': commitMessage ?? 'Update $path via GitHub Repo Downloader',
+        'content': base64Encode(utf8.encode(newContent)),
+        'sha': sha,
+      }),
+    );
+    if (response.statusCode == 409) {
+      throw Exception('File đã bị thay đổi ở nơi khác (conflict). Hãy mở lại file để lấy bản mới nhất rồi sửa lại.');
+    }
+    _checkStatus(response, 'Lưu file thất bại');
   }
 }
