@@ -2,11 +2,12 @@ import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
 import '../services/github_service.dart';
 import '../services/pinned_repos_service.dart';
+import '../l10n/strings.dart';
 import 'browser_screen.dart';
 import 'login_screen.dart';
+import 'settings_screen.dart';
 
 /// Cache đơn giản trong bộ nhớ, tồn tại trong suốt phiên chạy app.
-/// Giúp mở lại danh sách repo tức thì thay vì gọi API mỗi lần vào màn hình.
 class _RepoCache {
   static List<GithubRepo>? repos;
 }
@@ -62,7 +63,6 @@ class _RepoListScreenState extends State<RepoListScreen> {
     }
   }
 
-  /// Repo đã ghim luôn nằm trên, còn lại giữ nguyên thứ tự (theo lần cập nhật gần nhất từ GitHub).
   List<GithubRepo> _sortWithPinnedFirst(List<GithubRepo> repos) {
     final pinnedRepos = repos.where((r) => _pinned.contains(r.fullName)).toList()
       ..sort((a, b) => a.fullName.toLowerCase().compareTo(b.fullName.toLowerCase()));
@@ -113,9 +113,7 @@ class _RepoListScreenState extends State<RepoListScreen> {
     await _authService.logout();
     _RepoCache.repos = null;
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại.')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t('login.session_expired'))));
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(builder: (_) => const LoginScreen()),
         (route) => false,
@@ -142,6 +140,10 @@ class _RepoListScreenState extends State<RepoListScreen> {
     Navigator.push(context, MaterialPageRoute(builder: (_) => const BrowserScreen()));
   }
 
+  void _openSettings() {
+    Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsScreen()));
+  }
+
   Color _permissionColor(BuildContext context, GithubRepo repo) {
     final scheme = Theme.of(context).colorScheme;
     if (repo.canAdmin) return scheme.primary;
@@ -150,16 +152,24 @@ class _RepoListScreenState extends State<RepoListScreen> {
     return Colors.grey;
   }
 
+  String _permissionLabel(GithubRepo repo) {
+    if (repo.canAdmin) return t('repolist.perm_admin');
+    if (repo.canPush) return t('repolist.perm_write');
+    if (repo.canPull) return t('repolist.perm_read');
+    return t('repolist.perm_unknown');
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(_username != null ? 'Repo của $_username' : 'Repo của tôi'),
+        title: Text(_username != null ? t('repolist.title_named', {'username': _username!}) : t('repolist.title_generic')),
         actions: [
-          IconButton(icon: const Icon(Icons.edit_rounded), tooltip: 'Nhập owner/repo thủ công', onPressed: _openManualEntry),
+          IconButton(icon: const Icon(Icons.edit_rounded), tooltip: t('repolist.manual_entry_tooltip'), onPressed: _openManualEntry),
           IconButton(icon: const Icon(Icons.refresh_rounded), onPressed: () => _loadRepos()),
+          IconButton(icon: const Icon(Icons.settings_rounded), tooltip: t('repolist.settings_tooltip'), onPressed: _openSettings),
           IconButton(icon: const Icon(Icons.logout_rounded), onPressed: _logout),
         ],
       ),
@@ -170,7 +180,7 @@ class _RepoListScreenState extends State<RepoListScreen> {
             child: TextField(
               controller: _searchController,
               decoration: InputDecoration(
-                hintText: 'Tìm repo theo tên...',
+                hintText: t('repolist.search_hint'),
                 prefixIcon: const Icon(Icons.search_rounded),
                 suffixIcon: _searchController.text.isNotEmpty
                     ? IconButton(icon: const Icon(Icons.clear_rounded), onPressed: _searchController.clear)
@@ -192,7 +202,7 @@ class _RepoListScreenState extends State<RepoListScreen> {
                               const SizedBox(height: 12),
                               Text(_error!, textAlign: TextAlign.center),
                               const SizedBox(height: 16),
-                              FilledButton(onPressed: () => _loadRepos(), child: const Text('Thử lại')),
+                              FilledButton(onPressed: () => _loadRepos(), child: Text(t('common.retry'))),
                             ],
                           ),
                         ),
@@ -200,7 +210,7 @@ class _RepoListScreenState extends State<RepoListScreen> {
                     : _filteredRepos.isEmpty
                         ? Center(
                             child: Text(
-                              _allRepos.isEmpty ? 'Không tìm thấy repo nào.' : 'Không có repo nào khớp tìm kiếm.',
+                              _allRepos.isEmpty ? t('repolist.empty') : t('repolist.empty_filtered'),
                               style: TextStyle(color: scheme.outline),
                             ),
                           )
@@ -236,7 +246,7 @@ class _RepoListScreenState extends State<RepoListScreen> {
                                       children: [
                                         Chip(
                                           label: Text(
-                                            repo.permissionLabel,
+                                            _permissionLabel(repo),
                                             style: const TextStyle(color: Colors.white, fontSize: 11),
                                           ),
                                           backgroundColor: _permissionColor(context, repo),
@@ -248,7 +258,7 @@ class _RepoListScreenState extends State<RepoListScreen> {
                                             isPinned ? Icons.star_rounded : Icons.star_border_rounded,
                                             color: isPinned ? Colors.amber : scheme.outline,
                                           ),
-                                          tooltip: isPinned ? 'Bỏ ghim' : 'Ghim repo này',
+                                          tooltip: isPinned ? t('repolist.unpin_tooltip') : t('repolist.pin_tooltip'),
                                           onPressed: () => _togglePin(repo),
                                         ),
                                       ],

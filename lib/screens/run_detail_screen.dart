@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import '../services/github_service.dart';
 import '../utils/time_ago.dart';
+import '../l10n/strings.dart';
 
 class RunDetailScreen extends StatefulWidget {
   final String owner;
@@ -96,7 +97,7 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
     var displayLog = log!;
     final truncated = displayLog.length > maxChars;
     if (truncated) {
-      displayLog = '... (đã cắt bớt phần đầu, tải file .txt để xem đầy đủ)\n\n${displayLog.substring(displayLog.length - maxChars)}';
+      displayLog = '${t('rundetail.log_truncated')}\n\n${displayLog.substring(displayLog.length - maxChars)}';
     }
 
     if (!mounted) return;
@@ -118,13 +119,13 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                 children: [
                   Expanded(
                     child: Text(
-                      'Log: ${job.name}',
+                      t('rundetail.log_title', {'job': job.name}),
                       style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
                     ),
                   ),
                   IconButton(
                     icon: const Icon(Icons.download_rounded, color: Colors.white),
-                    tooltip: 'Tải log .txt',
+                    tooltip: t('rundetail.log_download_tooltip'),
                     onPressed: () => _saveLogToFile(job.name, log!),
                   ),
                 ],
@@ -153,25 +154,25 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
     final savePath = '${dir!.path}/log_$safeName.txt';
     await File(savePath).writeAsString(log);
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Đã lưu log: $savePath')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t('rundetail.log_saved', {'path': savePath}))));
     }
   }
 
   Future<void> _downloadArtifact(Artifact artifact) async {
     if (artifact.expired) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Artifact này đã hết hạn, không tải được nữa.')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t('rundetail.artifact_expired_msg'))));
       return;
     }
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => const AlertDialog(
+      builder: (ctx) => AlertDialog(
         content: SizedBox(
           height: 60,
           child: Row(children: [
-            SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 3)),
-            SizedBox(width: 16),
-            Text('Đang tải artifact...'),
+            const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 3)),
+            const SizedBox(width: 16),
+            Text(t('rundetail.downloading_artifact')),
           ]),
         ),
       ),
@@ -181,8 +182,6 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
       final zipBytes = await widget.githubService.downloadArtifactZip(artifact.archiveDownloadUrl);
       final dir = await getExternalStorageDirectory();
 
-      // GitHub luôn đóng gói artifact dạng .zip, kể cả khi bên trong chỉ có 1 file (vd: file .apk).
-      // Tự giải nén ra để lấy trực tiếp file gốc (vd: app-release.apk) thay vì để lại dạng zip lồng nhau.
       final archive = ZipDecoder().decodeBytes(zipBytes);
       final savedPaths = <String>[];
       for (final entry in archive.files) {
@@ -195,13 +194,15 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
       if (mounted) Navigator.pop(context);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Đã lưu: ${savedPaths.join(", ")}')),
+          SnackBar(content: Text(t('common.saved_at', {'path': savedPaths.join(", ")}))),
         );
       }
     } catch (e) {
       if (mounted) Navigator.pop(context);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi tải artifact: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(t('rundetail.artifact_download_error', {'error': e.toString()}))),
+        );
       }
     }
   }
@@ -230,7 +231,7 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                       children: [
                         Text(_error!, textAlign: TextAlign.center),
                         const SizedBox(height: 16),
-                        FilledButton(onPressed: _load, child: const Text('Thử lại')),
+                        FilledButton(onPressed: _load, child: Text(t('common.retry'))),
                       ],
                     ),
                   ),
@@ -258,7 +259,7 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                         ),
                       ),
                       const SizedBox(height: 16),
-                      Text('Jobs', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+                      Text(t('rundetail.jobs_title'), style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
                       const SizedBox(height: 8),
                       ..._jobs.map((job) {
                         final jobStatus = _statusIcon(job.status, job.conclusion);
@@ -271,7 +272,7 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                             title: Text(job.name, style: const TextStyle(fontWeight: FontWeight.w600)),
                             trailing: IconButton(
                               icon: const Icon(Icons.article_rounded),
-                              tooltip: 'Xem log',
+                              tooltip: t('rundetail.log_view_tooltip'),
                               onPressed: () => _viewLog(job),
                             ),
                             children: job.steps.map((step) {
@@ -286,10 +287,10 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                         );
                       }),
                       const SizedBox(height: 20),
-                      Text('Artifacts (file build ra)', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+                      Text(t('rundetail.artifacts_title'), style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
                       const SizedBox(height: 8),
                       if (_artifacts.isEmpty)
-                        Text('Không có artifact nào.', style: TextStyle(color: scheme.outline))
+                        Text(t('rundetail.no_artifacts'), style: TextStyle(color: scheme.outline))
                       else
                         ..._artifacts.map((artifact) => Card(
                               margin: const EdgeInsets.symmetric(vertical: 4),
@@ -299,7 +300,7 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                                 leading: const Icon(Icons.inventory_2_rounded),
                                 title: Text(artifact.name, style: const TextStyle(fontWeight: FontWeight.w600)),
                                 subtitle: Text(
-                                  artifact.expired ? 'Đã hết hạn' : _formatSize(artifact.sizeInBytes),
+                                  artifact.expired ? t('rundetail.expired') : _formatSize(artifact.sizeInBytes),
                                 ),
                                 trailing: artifact.expired
                                     ? null

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import '../services/auth_service.dart';
 import '../services/github_service.dart';
+import '../l10n/strings.dart';
 import 'login_screen.dart';
 import 'actions_screen.dart';
 import 'commits_screen.dart';
@@ -16,17 +17,17 @@ enum SortOption { nameAsc, nameDesc, sizeAsc, sizeDesc, dateNewest, dateOldest }
 String _sortLabel(SortOption option) {
   switch (option) {
     case SortOption.nameAsc:
-      return 'Tên (A-Z)';
+      return t('browser.sort.name_asc');
     case SortOption.nameDesc:
-      return 'Tên (Z-A)';
+      return t('browser.sort.name_desc');
     case SortOption.sizeAsc:
-      return 'Dung lượng (nhỏ → lớn)';
+      return t('browser.sort.size_asc');
     case SortOption.sizeDesc:
-      return 'Dung lượng (lớn → nhỏ)';
+      return t('browser.sort.size_desc');
     case SortOption.dateNewest:
-      return 'Ngày sửa (mới nhất)';
+      return t('browser.sort.date_newest');
     case SortOption.dateOldest:
-      return 'Ngày sửa (cũ nhất)';
+      return t('browser.sort.date_oldest');
   }
 }
 
@@ -98,9 +99,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
     } on GithubUnauthorizedException {
       await _authService.logout();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại.')),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t('login.session_expired'))));
         Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(builder: (_) => const LoginScreen()),
           (route) => false,
@@ -156,7 +155,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
       final savePath = '${dir!.path}/${file.name}';
       await File(savePath).writeAsBytes(bytes);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Đã lưu: $savePath')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t('common.saved_at', {'path': savePath}))));
       }
     }
     setState(() => _loading = false);
@@ -173,7 +172,6 @@ class _BrowserScreenState extends State<BrowserScreen> {
       canEdit: true, // GitHub sẽ tự từ chối (403) nếu tài khoản không có quyền ghi
     );
     if (saved == true && mounted) {
-      // Nội dung file đã đổi -> tải lại danh sách hiện tại để cập nhật sha/size mới nhất
       if (_currentPath.isEmpty) {
         await _loadRepo();
       } else {
@@ -187,13 +185,13 @@ class _BrowserScreenState extends State<BrowserScreen> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => const AlertDialog(
+      builder: (ctx) => AlertDialog(
         content: SizedBox(
           height: 60,
           child: Row(children: [
-            SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 3)),
-            SizedBox(width: 16),
-            Text('Đang kiểm tra số lượng file...'),
+            const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 3)),
+            const SizedBox(width: 16),
+            Text(t('browser.checking_file_count')),
           ]),
         ),
       ),
@@ -206,7 +204,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
     if (files == null || !mounted) return;
 
     if (files.isEmpty) {
-      _showError('Không có file nào để tải.');
+      _showError(t('browser.zip_no_files'));
       return;
     }
 
@@ -216,21 +214,21 @@ class _BrowserScreenState extends State<BrowserScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text('Tải "$displayName" dạng ZIP?'),
+        title: Text(t('browser.zip_confirm_title', {'name': displayName})),
         content: Text(
           isBig
-              ? 'Có ${files.length} file, khá nhiều nên có thể mất vài phút và dễ chạm giới hạn API của GitHub. Vẫn muốn tiếp tục?'
-              : 'Có ${files.length} file. Toàn bộ sẽ được nén thành 1 file .zip.',
+              ? t('browser.zip_confirm_big', {'count': files.length.toString()})
+              : t('browser.zip_confirm_normal', {'count': files.length.toString()}),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Huỷ')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Tải ZIP')),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(t('common.cancel'))),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(t('browser.zip_download_button'))),
         ],
       ),
     );
     if (confirm != true) return;
 
-    final progressNotifier = ValueNotifier<String>('Đang chuẩn bị...');
+    final progressNotifier = ValueNotifier<String>(t('browser.zip_preparing'));
     if (!mounted) return;
     showDialog(
       context: context,
@@ -253,7 +251,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
     final zipBytes = await _guard(() => _githubService!.zipFiles(
           files,
           path,
-          onProgress: (done, total) => progressNotifier.value = 'Đã tải $done/$total file...',
+          onProgress: (done, total) => progressNotifier.value =
+              t('browser.zip_progress', {'done': done.toString(), 'total': total.toString()}),
         ));
 
     if (mounted) Navigator.pop(context);
@@ -264,7 +263,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
     await File(savePath).writeAsBytes(zipBytes);
 
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Đã lưu: $savePath')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t('common.saved_at', {'path': savePath}))));
     }
   }
 
@@ -316,13 +315,11 @@ class _BrowserScreenState extends State<BrowserScreen> {
         context: context,
         builder: (ctx) => AlertDialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: const Text('Khá nhiều file'),
-          content: Text(
-            'Thư mục này có ${filesNeedingDate.length} file. Lấy ngày sửa đổi cho từng file sẽ tốn nhiều request API và có thể mất một lúc. Vẫn muốn tiếp tục?',
-          ),
+          title: Text(t('browser.date_sort_warning_title')),
+          content: Text(t('browser.date_sort_warning_body', {'count': filesNeedingDate.length.toString()})),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Huỷ')),
-            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Tiếp tục')),
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(t('common.cancel'))),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(t('common.continue'))),
           ],
         ),
       );
@@ -391,12 +388,12 @@ class _BrowserScreenState extends State<BrowserScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(_username != null ? 'Xin chào, $_username' : 'Duyệt repo'),
+        title: Text(_username != null ? t('browser.title_named', {'username': _username!}) : t('browser.title_generic')),
         actions: [
           if (repoIsOpen) ...[
             IconButton(
               icon: const Icon(Icons.play_circle_outline_rounded),
-              tooltip: 'Trạng thái GitHub Actions',
+              tooltip: t('browser.actions_tooltip'),
               onPressed: () => Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -410,7 +407,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
             ),
             IconButton(
               icon: const Icon(Icons.history_rounded),
-              tooltip: 'Lịch sử Commit',
+              tooltip: t('browser.commits_tooltip'),
               onPressed: () => Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -424,7 +421,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
             ),
             IconButton(
               icon: Icon(_searching ? Icons.close_rounded : Icons.search_rounded),
-              tooltip: 'Tìm file trong toàn repo',
+              tooltip: t('browser.search_tooltip'),
               onPressed: () => setState(() {
                 _searching = !_searching;
                 if (!_searching) {
@@ -441,7 +438,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
           ? FloatingActionButton.extended(
               onPressed: _downloadWholeRepoAsZip,
               icon: const Icon(Icons.folder_zip_rounded),
-              label: const Text('Tải cả repo'),
+              label: Text(t('browser.download_whole_repo')),
             )
           : null,
       body: Column(
@@ -454,7 +451,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
                   child: TextField(
                     controller: _ownerController,
                     decoration: InputDecoration(
-                      labelText: 'Owner',
+                      labelText: t('browser.owner_label'),
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                     ),
                   ),
@@ -464,13 +461,13 @@ class _BrowserScreenState extends State<BrowserScreen> {
                   child: TextField(
                     controller: _repoController,
                     decoration: InputDecoration(
-                      labelText: 'Repo',
+                      labelText: t('browser.repo_label'),
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                     ),
                   ),
                 ),
                 const SizedBox(width: 8),
-                FilledButton(onPressed: _loadRepo, child: const Text('Mở')),
+                FilledButton(onPressed: _loadRepo, child: Text(t('browser.open_button'))),
               ],
             ),
           ),
@@ -481,7 +478,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
                 controller: _searchController,
                 autofocus: true,
                 decoration: InputDecoration(
-                  hintText: 'Tìm file theo tên/đường dẫn trong toàn repo...',
+                  hintText: t('browser.search_hint'),
                   prefixIcon: const Icon(Icons.search_rounded),
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                 ),
@@ -506,12 +503,12 @@ class _BrowserScreenState extends State<BrowserScreen> {
                 children: [
                   Expanded(
                     child: Text(
-                      'Nhấn giữ thư mục để tải .zip',
+                      t('browser.hint_long_press_zip'),
                       style: TextStyle(fontSize: 12, color: scheme.outline),
                     ),
                   ),
                   PopupMenuButton<SortOption>(
-                    tooltip: 'Sắp xếp',
+                    tooltip: t('browser.sort_tooltip'),
                     onSelected: _selectSort,
                     icon: Icon(Icons.sort_rounded, size: 20, color: scheme.primary),
                     itemBuilder: (ctx) => SortOption.values
@@ -537,7 +534,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
                 : _files.isEmpty && !_loading
                     ? Center(
                         child: Text(
-                          'Nhập owner/repo rồi bấm "Mở"\nđể bắt đầu duyệt file.',
+                          t('browser.empty_state'),
                           textAlign: TextAlign.center,
                           style: TextStyle(color: scheme.outline),
                         ),
@@ -553,7 +550,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
     if (_searchResults.isEmpty) {
       return Center(
         child: Text(
-          _searchController.text.isEmpty ? 'Nhập từ khoá rồi nhấn Enter để tìm.' : 'Không tìm thấy file nào khớp.',
+          _searchController.text.isEmpty ? t('browser.search_hint_empty') : t('browser.search_no_match'),
           style: TextStyle(color: scheme.outline),
         ),
       );

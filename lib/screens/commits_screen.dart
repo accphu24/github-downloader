@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/github_service.dart';
 import '../utils/time_ago.dart';
+import '../l10n/strings.dart';
 
 class CommitsScreen extends StatefulWidget {
   final String owner;
@@ -45,7 +46,7 @@ class _CommitsScreenState extends State<CommitsScreen> {
     final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
-      appBar: AppBar(title: Text('Commits · ${widget.owner}/${widget.repo}')),
+      appBar: AppBar(title: Text(t('commits.title', {'owner': widget.owner, 'repo': widget.repo}))),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
@@ -57,13 +58,13 @@ class _CommitsScreenState extends State<CommitsScreen> {
                       children: [
                         Text(_error!, textAlign: TextAlign.center),
                         const SizedBox(height: 16),
-                        FilledButton(onPressed: _load, child: const Text('Thử lại')),
+                        FilledButton(onPressed: _load, child: Text(t('common.retry'))),
                       ],
                     ),
                   ),
                 )
               : _commits.isEmpty
-                  ? Center(child: Text('Repo này chưa có commit nào.', style: TextStyle(color: scheme.outline)))
+                  ? Center(child: Text(t('commits.empty'), style: TextStyle(color: scheme.outline)))
                   : RefreshIndicator(
                       onRefresh: _load,
                       child: ListView.builder(

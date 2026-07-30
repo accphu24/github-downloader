@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/github_service.dart';
 import '../utils/time_ago.dart';
+import '../l10n/strings.dart';
 import 'run_detail_screen.dart';
 
 class ActionsScreen extends StatefulWidget {
@@ -43,17 +44,17 @@ class _ActionsScreenState extends State<ActionsScreen> {
 
   ({IconData icon, Color color, String label}) _statusInfo(WorkflowRun run) {
     if (run.status != 'completed') {
-      return (icon: Icons.autorenew_rounded, color: Colors.orange, label: 'Đang chạy');
+      return (icon: Icons.autorenew_rounded, color: Colors.orange, label: t('actions.status_running'));
     }
     switch (run.conclusion) {
       case 'success':
-        return (icon: Icons.check_circle_rounded, color: Colors.green, label: 'Thành công');
+        return (icon: Icons.check_circle_rounded, color: Colors.green, label: t('actions.status_success'));
       case 'failure':
-        return (icon: Icons.cancel_rounded, color: Colors.red, label: 'Thất bại');
+        return (icon: Icons.cancel_rounded, color: Colors.red, label: t('actions.status_failure'));
       case 'cancelled':
-        return (icon: Icons.block_rounded, color: Colors.grey, label: 'Đã huỷ');
+        return (icon: Icons.block_rounded, color: Colors.grey, label: t('actions.status_cancelled'));
       default:
-        return (icon: Icons.help_outline_rounded, color: Colors.grey, label: run.conclusion ?? 'Không rõ');
+        return (icon: Icons.help_outline_rounded, color: Colors.grey, label: run.conclusion ?? t('actions.status_unknown'));
     }
   }
 
@@ -62,7 +63,7 @@ class _ActionsScreenState extends State<ActionsScreen> {
     final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
-      appBar: AppBar(title: Text('Actions · ${widget.owner}/${widget.repo}')),
+      appBar: AppBar(title: Text(t('actions.title', {'owner': widget.owner, 'repo': widget.repo}))),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
@@ -74,13 +75,13 @@ class _ActionsScreenState extends State<ActionsScreen> {
                       children: [
                         Text(_error!, textAlign: TextAlign.center),
                         const SizedBox(height: 16),
-                        FilledButton(onPressed: _load, child: const Text('Thử lại')),
+                        FilledButton(onPressed: _load, child: Text(t('common.retry'))),
                       ],
                     ),
                   ),
                 )
               : _runs.isEmpty
-                  ? Center(child: Text('Repo này chưa chạy workflow nào.', style: TextStyle(color: scheme.outline)))
+                  ? Center(child: Text(t('actions.empty'), style: TextStyle(color: scheme.outline)))
                   : RefreshIndicator(
                       onRefresh: _load,
                       child: ListView.builder(
@@ -103,7 +104,7 @@ class _ActionsScreenState extends State<ActionsScreen> {
                               ),
                               trailing: IconButton(
                                 icon: const Icon(Icons.open_in_new_rounded, size: 18),
-                                tooltip: 'Mở trên trình duyệt',
+                                tooltip: t('actions.open_browser_tooltip'),
                                 onPressed: () {
                                   if (run.htmlUrl.isNotEmpty) {
                                     launchUrl(Uri.parse(run.htmlUrl), mode: LaunchMode.externalApplication);

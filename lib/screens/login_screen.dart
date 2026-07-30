@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
+import '../l10n/strings.dart';
 import 'repo_list_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -65,13 +66,13 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: 24),
                   Text(
-                    'GitHub Repo Downloader',
+                    t('login.title'),
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Đăng nhập bằng GitHub để duyệt\nvà tải file từ repo của bạn.',
+                    t('login.subtitle'),
                     textAlign: TextAlign.center,
                     style: TextStyle(color: scheme.onSurfaceVariant, height: 1.4),
                   ),
@@ -83,7 +84,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         : FilledButton.icon(
                             onPressed: _handleLogin,
                             icon: const Icon(Icons.login_rounded),
-                            label: const Text('Đăng nhập bằng GitHub'),
+                            label: Text(t('login.button')),
                           ),
                   ),
                 ],

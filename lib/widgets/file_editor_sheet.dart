@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import '../services/github_service.dart';
+import '../l10n/strings.dart';
 
 /// Bottom sheet xem và sửa nội dung 1 file text, có thể lưu (commit) thẳng lên GitHub.
 /// Trả về true qua Navigator nếu đã lưu thành công (để màn hình cha có thể tự làm mới).
@@ -76,7 +77,6 @@ class _FileEditorSheetState extends State<FileEditorSheet> {
       _error = null;
     });
     try {
-      // Lấy lại thông tin file mới nhất (kèm sha hiện tại) để tránh sửa dựa trên bản cũ.
       final meta = await widget.githubService.getFileMeta(widget.owner, widget.repo, widget.file.path);
       _currentSha = meta.sha;
       final bytes = await widget.githubService.downloadFile(meta.downloadUrl!);
@@ -94,7 +94,7 @@ class _FileEditorSheetState extends State<FileEditorSheet> {
     final savePath = '${dir!.path}/${widget.file.name}';
     await File(savePath).writeAsBytes(utf8.encode(_controller.text));
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Đã lưu: $savePath')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t('common.saved_at', {'path': savePath}))));
     }
   }
 
@@ -106,7 +106,7 @@ class _FileEditorSheetState extends State<FileEditorSheet> {
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Commit thay đổi lên GitHub?'),
+        title: Text(t('editor.commit_confirm_title')),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -114,14 +114,14 @@ class _FileEditorSheetState extends State<FileEditorSheet> {
             const SizedBox(height: 12),
             TextField(
               controller: messageController,
-              decoration: const InputDecoration(labelText: 'Commit message', border: OutlineInputBorder()),
+              decoration: InputDecoration(labelText: t('editor.commit_message_label'), border: const OutlineInputBorder()),
               maxLines: 2,
             ),
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Huỷ')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Commit')),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(t('common.cancel'))),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text('Commit')),
         ],
       ),
     );
@@ -138,12 +138,12 @@ class _FileEditorSheetState extends State<FileEditorSheet> {
         commitMessage: messageController.text.trim(),
       );
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã commit thành công!')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t('editor.commit_success'))));
         Navigator.pop(context, true);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t('common.error_prefix', {'error': e.toString()}))));
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -156,11 +156,11 @@ class _FileEditorSheetState extends State<FileEditorSheet> {
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Bỏ thay đổi chưa lưu?'),
-        content: const Text('Bạn đã sửa nội dung nhưng chưa commit. Thoát sẽ mất các thay đổi này.'),
+        title: Text(t('editor.discard_title')),
+        content: Text(t('editor.discard_body')),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Ở lại')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Bỏ qua')),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(t('editor.discard_stay'))),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(t('editor.discard_confirm'))),
         ],
       ),
     );
@@ -169,7 +169,6 @@ class _FileEditorSheetState extends State<FileEditorSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     final hasChanges = _controller.text != _originalContent;
 
     return DraggableScrollableSheet(
@@ -199,12 +198,12 @@ class _FileEditorSheetState extends State<FileEditorSheet> {
                   if (widget.canEdit && !_loading && _error == null)
                     IconButton(
                       icon: Icon(_editing ? Icons.visibility_rounded : Icons.edit_rounded),
-                      tooltip: _editing ? 'Chỉ xem' : 'Sửa file',
+                      tooltip: _editing ? t('editor.view_tooltip') : t('editor.edit_tooltip'),
                       onPressed: () => setState(() => _editing = !_editing),
                     ),
                   IconButton(
                     icon: const Icon(Icons.download_rounded),
-                    tooltip: 'Tải về máy',
+                    tooltip: t('editor.download_tooltip'),
                     onPressed: _loading ? null : _downloadToDevice,
                   ),
                 ],
@@ -247,7 +246,7 @@ class _FileEditorSheetState extends State<FileEditorSheet> {
                   child: FilledButton.icon(
                     onPressed: _saving ? null : _saveToGithub,
                     icon: const Icon(Icons.cloud_upload_rounded),
-                    label: const Text('Commit lên GitHub'),
+                    label: Text(t('editor.commit_button')),
                   ),
                 ),
               ),
