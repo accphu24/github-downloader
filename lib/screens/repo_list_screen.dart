@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
 import '../services/github_service.dart';
+import '../services/pinned_repos_service.dart';
 import 'browser_screen.dart';
 import 'login_screen.dart';
 
@@ -19,10 +20,12 @@ class RepoListScreen extends StatefulWidget {
 
 class _RepoListScreenState extends State<RepoListScreen> {
   final _authService = AuthService();
+  final _pinnedService = PinnedReposService();
   final _searchController = TextEditingController();
   GithubService? _githubService;
   List<GithubRepo> _allRepos = [];
   List<GithubRepo> _filteredRepos = [];
+  Set<String> _pinned = {};
   bool _loading = true;
   String? _error;
   String? _username;
@@ -45,12 +48,12 @@ class _RepoListScreenState extends State<RepoListScreen> {
     final username = await _authService.getUsername();
     _githubService = GithubService(token: token);
     _username = username;
+    _pinned = await _pinnedService.getPinned();
 
-    // Có cache -> hiện ngay lập tức, rồi âm thầm làm mới ở nền
     if (_RepoCache.repos != null) {
       setState(() {
         _allRepos = _RepoCache.repos!;
-        _filteredRepos = _allRepos;
+        _applyFilter();
         _loading = false;
       });
       _loadRepos(silent: true);
@@ -59,12 +62,27 @@ class _RepoListScreenState extends State<RepoListScreen> {
     }
   }
 
+  /// Repo đã ghim luôn nằm trên, còn lại giữ nguyên thứ tự (theo lần cập nhật gần nhất từ GitHub).
+  List<GithubRepo> _sortWithPinnedFirst(List<GithubRepo> repos) {
+    final pinnedRepos = repos.where((r) => _pinned.contains(r.fullName)).toList()
+      ..sort((a, b) => a.fullName.toLowerCase().compareTo(b.fullName.toLowerCase()));
+    final rest = repos.where((r) => !_pinned.contains(r.fullName)).toList();
+    return [...pinnedRepos, ...rest];
+  }
+
   void _applyFilter() {
     final query = _searchController.text.trim().toLowerCase();
+    final base = query.isEmpty
+        ? _allRepos
+        : _allRepos.where((r) => r.fullName.toLowerCase().contains(query)).toList();
+    setState(() => _filteredRepos = _sortWithPinnedFirst(base));
+  }
+
+  Future<void> _togglePin(GithubRepo repo) async {
+    final updated = await _pinnedService.togglePin(repo.fullName);
     setState(() {
-      _filteredRepos = query.isEmpty
-          ? _allRepos
-          : _allRepos.where((r) => r.fullName.toLowerCase().contains(query)).toList();
+      _pinned = updated;
+      _applyFilter();
     });
   }
 
@@ -193,9 +211,12 @@ class _RepoListScreenState extends State<RepoListScreen> {
                               itemCount: _filteredRepos.length,
                               itemBuilder: (context, index) {
                                 final repo = _filteredRepos[index];
+                                final isPinned = _pinned.contains(repo.fullName);
                                 return Card(
                                   margin: const EdgeInsets.symmetric(vertical: 4),
-                                  color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
+                                  color: isPinned
+                                      ? scheme.primaryContainer.withValues(alpha: 0.35)
+                                      : scheme.surfaceContainerHighest.withValues(alpha: 0.4),
                                   child: ListTile(
                                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                                     leading: CircleAvatar(
@@ -210,14 +231,27 @@ class _RepoListScreenState extends State<RepoListScreen> {
                                     subtitle: repo.description != null && repo.description!.isNotEmpty
                                         ? Text(repo.description!, maxLines: 1, overflow: TextOverflow.ellipsis)
                                         : null,
-                                    trailing: Chip(
-                                      label: Text(
-                                        repo.permissionLabel,
-                                        style: const TextStyle(color: Colors.white, fontSize: 11),
-                                      ),
-                                      backgroundColor: _permissionColor(context, repo),
-                                      visualDensity: VisualDensity.compact,
-                                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                                    trailing: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Chip(
+                                          label: Text(
+                                            repo.permissionLabel,
+                                            style: const TextStyle(color: Colors.white, fontSize: 11),
+                                          ),
+                                          backgroundColor: _permissionColor(context, repo),
+                                          visualDensity: VisualDensity.compact,
+                                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                                        ),
+                                        IconButton(
+                                          icon: Icon(
+                                            isPinned ? Icons.star_rounded : Icons.star_border_rounded,
+                                            color: isPinned ? Colors.amber : scheme.outline,
+                                          ),
+                                          tooltip: isPinned ? 'Bỏ ghim' : 'Ghim repo này',
+                                          onPressed: () => _togglePin(repo),
+                                        ),
+                                      ],
                                     ),
                                     onTap: () => _openRepo(repo),
                                   ),
