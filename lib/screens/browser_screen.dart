@@ -1,8 +1,7 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:path_provider/path_provider.dart';
 import '../services/auth_service.dart';
 import '../services/github_service.dart';
+import '../services/downloads_service.dart';
 import '../l10n/strings.dart';
 import 'login_screen.dart';
 import 'actions_screen.dart';
@@ -151,11 +150,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
     setState(() => _loading = true);
     final bytes = await _guard(() => _githubService!.downloadFile(file.downloadUrl!));
     if (bytes != null) {
-      final dir = await getExternalStorageDirectory();
-      final savePath = '${dir!.path}/${file.name}';
-      await File(savePath).writeAsBytes(bytes);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t('common.saved_at', {'path': savePath}))));
+      final savedPath = await DownloadsService.saveBytes(file.name, bytes);
+      if (mounted && savedPath != null) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t('common.saved_at', {'path': savedPath}))));
       }
     }
     setState(() => _loading = false);
@@ -258,12 +255,10 @@ class _BrowserScreenState extends State<BrowserScreen> {
     if (mounted) Navigator.pop(context);
     if (zipBytes == null) return;
 
-    final dir = await getExternalStorageDirectory();
-    final savePath = '${dir!.path}/$displayName.zip';
-    await File(savePath).writeAsBytes(zipBytes);
+    final savedPath = await DownloadsService.saveBytes('$displayName.zip', zipBytes);
 
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t('common.saved_at', {'path': savePath}))));
+    if (mounted && savedPath != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t('common.saved_at', {'path': savedPath}))));
     }
   }
 

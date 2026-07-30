@@ -49,6 +49,26 @@ jobs:
                   1,
               )
 
+          # Thêm quyền lưu trữ cho media_store_plus (lưu file vào thư mục Download công khai)
+          if 'READ_MEDIA_IMAGES' not in content:
+              storage_permissions = (
+                  '<uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />\n'
+                  '    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />\n'
+                  '    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />\n'
+                  '    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />\n'
+                  '    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />\n'
+                  '    <application'
+              )
+              content = content.replace("<application", storage_permissions, 1)
+
+          # Cần cho Android 10 (API 29) để MediaStore hoạt động ổn định
+          if 'requestLegacyExternalStorage' not in content:
+              content = content.replace(
+                  "<application",
+                  '<application\n        android:requestLegacyExternalStorage="true"',
+                  1,
+              )
+
           # Thêm taskAffinity="" cho MainActivity để tránh lỗi quay vòng khi redirect từ trình duyệt
           if 'android:name=".MainActivity"' in content and 'taskAffinity' not in content.split('android:name=".MainActivity"')[1].split('>')[0]:
               content = content.replace(

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'services/auth_service.dart';
 import 'services/app_settings.dart';
 import 'services/music_service.dart';
+import 'services/downloads_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/repo_list_screen.dart';
 
@@ -24,6 +25,7 @@ class _MyAppState extends State<MyApp> {
   }
 
   Future<void> _bootstrap() async {
+    await DownloadsService.ensureInitialized();
     await AppSettings.instance.load();
     if (AppSettings.instance.musicEnabled && AppSettings.instance.musicUrl.isNotEmpty) {
       await MusicService.instance.play(AppSettings.instance.musicUrl, volume: AppSettings.instance.musicVolume);

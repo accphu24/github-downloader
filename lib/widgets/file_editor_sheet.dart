@@ -1,8 +1,7 @@
 import 'dart:convert';
-import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:path_provider/path_provider.dart';
 import '../services/github_service.dart';
+import '../services/downloads_service.dart';
 import '../l10n/strings.dart';
 
 /// Bottom sheet xem và sửa nội dung 1 file text, có thể lưu (commit) thẳng lên GitHub.
@@ -90,11 +89,9 @@ class _FileEditorSheetState extends State<FileEditorSheet> {
   }
 
   Future<void> _downloadToDevice() async {
-    final dir = await getExternalStorageDirectory();
-    final savePath = '${dir!.path}/${widget.file.name}';
-    await File(savePath).writeAsBytes(utf8.encode(_controller.text));
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t('common.saved_at', {'path': savePath}))));
+    final savedPath = await DownloadsService.saveBytes(widget.file.name, utf8.encode(_controller.text));
+    if (mounted && savedPath != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t('common.saved_at', {'path': savedPath}))));
     }
   }
 

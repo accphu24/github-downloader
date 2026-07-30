@@ -1,8 +1,8 @@
-import 'dart:io';
+import 'dart:convert';
 import 'package:archive/archive.dart';
 import 'package:flutter/material.dart';
-import 'package:path_provider/path_provider.dart';
 import '../services/github_service.dart';
+import '../services/downloads_service.dart';
 import '../utils/time_ago.dart';
 import '../l10n/strings.dart';
 
@@ -149,12 +149,10 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
   }
 
   Future<void> _saveLogToFile(String jobName, String log) async {
-    final dir = await getExternalStorageDirectory();
     final safeName = jobName.replaceAll(RegExp(r'[^a-zA-Z0-9_\-]'), '_');
-    final savePath = '${dir!.path}/log_$safeName.txt';
-    await File(savePath).writeAsString(log);
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t('rundetail.log_saved', {'path': savePath}))));
+    final savedPath = await DownloadsService.saveBytes('log_$safeName.txt', utf8.encode(log));
+    if (mounted && savedPath != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t('rundetail.log_saved', {'path': savedPath}))));
     }
   }
 
@@ -180,15 +178,12 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
 
     try {
       final zipBytes = await widget.githubService.downloadArtifactZip(artifact.archiveDownloadUrl);
-      final dir = await getExternalStorageDirectory();
-
       final archive = ZipDecoder().decodeBytes(zipBytes);
       final savedPaths = <String>[];
       for (final entry in archive.files) {
         if (!entry.isFile) continue;
-        final savePath = '${dir!.path}/${entry.name}';
-        await File(savePath).writeAsBytes(entry.content as List<int>);
-        savedPaths.add(savePath);
+        final savedPath = await DownloadsService.saveBytes(entry.name, entry.content as List<int>);
+        if (savedPath != null) savedPaths.add(savedPath);
       }
 
       if (mounted) Navigator.pop(context);
