@@ -22,6 +22,11 @@ jobs:
             cp -r /tmp/scaffold/android ./android
           fi
 
+      - name: Ghi đè MainActivity.kt bằng bản tuỳ chỉnh (xử lý lưu file vào Downloads)
+        run: |
+          mkdir -p android/app/src/main/kotlin/com/tuytam/github_downloader
+          cp android_custom/MainActivity.kt android/app/src/main/kotlin/com/tuytam/github_downloader/MainActivity.kt
+
       - name: Thêm CallbackActivity cho OAuth vào AndroidManifest.xml
         run: |
           python3 - <<'EOF'
@@ -49,23 +54,12 @@ jobs:
                   1,
               )
 
-          # Thêm quyền lưu trữ cho media_store_plus (lưu file vào thư mục Download công khai)
-          if 'READ_MEDIA_IMAGES' not in content:
-              storage_permissions = (
-                  '<uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />\n'
-                  '    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />\n'
-                  '    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />\n'
-                  '    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />\n'
-                  '    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />\n'
-                  '    <application'
-              )
-              content = content.replace("<application", storage_permissions, 1)
-
-          # Cần cho Android 10 (API 29) để MediaStore hoạt động ổn định
-          if 'requestLegacyExternalStorage' not in content:
+          # Thêm quyền ghi file cho Android cũ (dưới Android 10) - từ Android 10 trở lên
+          # MediaStore.Downloads không cần quyền đặc biệt nào cả.
+          if 'WRITE_EXTERNAL_STORAGE' not in content:
               content = content.replace(
                   "<application",
-                  '<application\n        android:requestLegacyExternalStorage="true"',
+                  '<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />\n    <application',
                   1,
               )
 
