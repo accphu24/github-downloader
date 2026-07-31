@@ -5,6 +5,7 @@ import '../services/github_service.dart';
 import '../services/downloads_service.dart';
 import '../utils/time_ago.dart';
 import '../l10n/strings.dart';
+import '../widgets/top_notification.dart';
 
 class RunDetailScreen extends StatefulWidget {
   final String owner;
@@ -152,7 +153,7 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
     final safeName = jobName.replaceAll(RegExp(r'[^a-zA-Z0-9_\-]'), '_');
     final savedPath = await DownloadsService.saveBytes('log_$safeName.txt', utf8.encode(log));
     if (mounted && savedPath != null) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t('rundetail.log_saved', {'path': savedPath}))));
+      showTopNotification(context, t('rundetail.log_saved', {'path': savedPath}));
     }
   }
 
@@ -188,9 +189,7 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
 
       if (mounted) Navigator.pop(context);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(t('common.saved_at', {'path': savedPaths.join(", ")}))),
-        );
+        showTopNotification(context, t('common.saved_at', {'path': savedPaths.join(", ")}));
       }
     } catch (e) {
       if (mounted) Navigator.pop(context);

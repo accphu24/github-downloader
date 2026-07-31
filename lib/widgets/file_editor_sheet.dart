@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../services/github_service.dart';
 import '../services/downloads_service.dart';
 import '../l10n/strings.dart';
+import 'top_notification.dart';
 
 /// Bottom sheet xem và sửa nội dung 1 file text, có thể lưu (commit) thẳng lên GitHub.
 /// Trả về true qua Navigator nếu đã lưu thành công (để màn hình cha có thể tự làm mới).
@@ -91,7 +92,7 @@ class _FileEditorSheetState extends State<FileEditorSheet> {
   Future<void> _downloadToDevice() async {
     final savedPath = await DownloadsService.saveBytes(widget.file.name, utf8.encode(_controller.text));
     if (mounted && savedPath != null) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t('common.saved_at', {'path': savedPath}))));
+      showTopNotification(context, t('common.saved_at', {'path': savedPath}));
     }
   }
 

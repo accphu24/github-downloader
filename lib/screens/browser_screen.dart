@@ -3,6 +3,7 @@ import '../services/auth_service.dart';
 import '../services/github_service.dart';
 import '../services/downloads_service.dart';
 import '../l10n/strings.dart';
+import '../widgets/top_notification.dart';
 import 'login_screen.dart';
 import 'actions_screen.dart';
 import 'commits_screen.dart';
@@ -152,7 +153,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
     if (bytes != null) {
       final savedPath = await DownloadsService.saveBytes(file.name, bytes);
       if (mounted && savedPath != null) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t('common.saved_at', {'path': savedPath}))));
+        showTopNotification(context, t('common.saved_at', {'path': savedPath}));
       }
     }
     setState(() => _loading = false);
@@ -258,7 +259,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
     final savedPath = await DownloadsService.saveBytes('$displayName.zip', zipBytes);
 
     if (mounted && savedPath != null) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t('common.saved_at', {'path': savedPath}))));
+      showTopNotification(context, t('common.saved_at', {'path': savedPath}));
     }
   }
 
