@@ -4,6 +4,11 @@ import 'services/app_settings.dart';
 import 'services/music_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/repo_list_screen.dart';
+import 'widgets/global_download_indicator.dart';
+
+/// Key toàn app để hiện thông báo (vd: "đã tải xong") ngay cả khi tác vụ tải
+/// chạy nền hoàn tất lúc người dùng đã chuyển sang màn hình khác.
+final navigatorKey = GlobalKey<NavigatorState>();
 
 void main() {
   runApp(const MyApp());
@@ -38,6 +43,7 @@ class _MyAppState extends State<MyApp> {
         final settings = AppSettings.instance;
 
         return MaterialApp(
+          navigatorKey: navigatorKey,
           title: 'GitHub Repo Downloader',
           theme: ThemeData(
             useMaterial3: true,
@@ -84,7 +90,12 @@ class _MyAppState extends State<MyApp> {
             final mediaQuery = MediaQuery.of(context);
             return MediaQuery(
               data: mediaQuery.copyWith(textScaler: TextScaler.linear(settings.fontScale)),
-              child: child!,
+              child: Stack(
+                children: [
+                  child!,
+                  const GlobalDownloadIndicator(),
+                ],
+              ),
             );
           },
           home: _StartupGate(),

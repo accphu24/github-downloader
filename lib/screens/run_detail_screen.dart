@@ -3,9 +3,11 @@ import 'package:archive/archive.dart';
 import 'package:flutter/material.dart';
 import '../services/github_service.dart';
 import '../services/downloads_service.dart';
+import '../services/download_manager.dart';
 import '../utils/time_ago.dart';
 import '../l10n/strings.dart';
 import '../widgets/top_notification.dart';
+import '../main.dart' show navigatorKey;
 
 class RunDetailScreen extends StatefulWidget {
   final String owner;
@@ -157,48 +159,36 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
     }
   }
 
-  Future<void> _downloadArtifact(Artifact artifact) async {
+  void _downloadArtifact(Artifact artifact) {
     if (artifact.expired) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t('rundetail.artifact_expired_msg'))));
       return;
     }
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        content: SizedBox(
-          height: 60,
-          child: Row(children: [
-            const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 3)),
-            const SizedBox(width: 16),
-            Text(t('rundetail.downloading_artifact')),
-          ]),
-        ),
+
+    DownloadManager.instance.runDownload(
+      label: artifact.name,
+      navigatorKey: navigatorKey,
+      fetch: (onProgress) => widget.githubService.downloadArtifactZip(
+        artifact.archiveDownloadUrl,
+        onProgress: (received, total) {
+          if (total != null && total > 0) onProgress(received / total);
+        },
+      ),
+      save: (zipBytes) async {
+        final archive = ZipDecoder().decodeBytes(zipBytes);
+        final savedPaths = <String>[];
+        for (final entry in archive.files) {
+          if (!entry.isFile) continue;
+          final savedPath = await DownloadsService.saveBytes(entry.name, entry.content as List<int>);
+          if (savedPath != null) savedPaths.add(savedPath);
+        }
+        return savedPaths.isEmpty ? null : savedPaths.join(', ');
+      },
+      onSuccess: (ctx, savedPath) => showTopNotification(ctx, t('common.saved_at', {'path': savedPath})),
+      onError: (ctx, error) => ScaffoldMessenger.of(ctx).showSnackBar(
+        SnackBar(content: Text(t('rundetail.artifact_download_error', {'error': error}))),
       ),
     );
-
-    try {
-      final zipBytes = await widget.githubService.downloadArtifactZip(artifact.archiveDownloadUrl);
-      final archive = ZipDecoder().decodeBytes(zipBytes);
-      final savedPaths = <String>[];
-      for (final entry in archive.files) {
-        if (!entry.isFile) continue;
-        final savedPath = await DownloadsService.saveBytes(entry.name, entry.content as List<int>);
-        if (savedPath != null) savedPaths.add(savedPath);
-      }
-
-      if (mounted) Navigator.pop(context);
-      if (mounted) {
-        showTopNotification(context, t('common.saved_at', {'path': savedPaths.join(", ")}));
-      }
-    } catch (e) {
-      if (mounted) Navigator.pop(context);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(t('rundetail.artifact_download_error', {'error': e.toString()}))),
-        );
-      }
-    }
   }
 
   String _formatSize(int bytes) {

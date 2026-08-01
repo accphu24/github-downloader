@@ -450,10 +450,27 @@ class GithubService {
   }
 
   /// Tải nội dung artifact (GitHub luôn đóng gói dạng .zip, kể cả khi bên trong chỉ có 1 file).
-  Future<List<int>> downloadArtifactZip(String archiveDownloadUrl) async {
-    final response = await http.get(Uri.parse(archiveDownloadUrl), headers: _headers);
-    _checkStatus(response, 'Tải artifact thất bại');
-    return response.bodyBytes;
+  /// Tải dạng stream để có thể báo tiến độ (%) qua [onProgress] thay vì chờ không rõ tiến trình.
+  Future<List<int>> downloadArtifactZip(
+    String archiveDownloadUrl, {
+    void Function(int received, int? total)? onProgress,
+  }) async {
+    final request = http.Request('GET', Uri.parse(archiveDownloadUrl));
+    request.headers.addAll(_headers);
+    final streamedResponse = await http.Client().send(request);
+
+    if (streamedResponse.statusCode == 401) throw GithubUnauthorizedException();
+    if (streamedResponse.statusCode < 200 || streamedResponse.statusCode >= 300) {
+      throw Exception('Tải artifact thất bại (mã lỗi ${streamedResponse.statusCode})');
+    }
+
+    final total = streamedResponse.contentLength;
+    final bytes = <int>[];
+    await for (final chunk in streamedResponse.stream) {
+      bytes.addAll(chunk);
+      onProgress?.call(bytes.length, total);
+    }
+    return bytes;
   }
 
   /// Cập nhật nội dung 1 file và commit thẳng lên GitHub.

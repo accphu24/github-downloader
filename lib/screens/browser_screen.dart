@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
 import '../services/github_service.dart';
 import '../services/downloads_service.dart';
+import '../services/download_manager.dart';
 import '../l10n/strings.dart';
 import '../widgets/top_notification.dart';
+import '../main.dart' show navigatorKey;
 import 'login_screen.dart';
 import 'actions_screen.dart';
 import 'commits_screen.dart';
@@ -146,17 +148,16 @@ class _BrowserScreenState extends State<BrowserScreen> {
     setState(() => _loading = false);
   }
 
-  Future<void> _downloadFile(GithubFile file) async {
+  void _downloadFile(GithubFile file) {
     if (file.downloadUrl == null) return;
-    setState(() => _loading = true);
-    final bytes = await _guard(() => _githubService!.downloadFile(file.downloadUrl!));
-    if (bytes != null) {
-      final savedPath = await DownloadsService.saveBytes(file.name, bytes);
-      if (mounted && savedPath != null) {
-        showTopNotification(context, t('common.saved_at', {'path': savedPath}));
-      }
-    }
-    setState(() => _loading = false);
+    DownloadManager.instance.runDownload(
+      label: file.name,
+      navigatorKey: navigatorKey,
+      fetch: (onProgress) => _githubService!.downloadFile(file.downloadUrl!),
+      save: (bytes) => DownloadsService.saveBytes(file.name, bytes),
+      onSuccess: (ctx, savedPath) => showTopNotification(ctx, t('common.saved_at', {'path': savedPath})),
+      onError: (ctx, error) => ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text(error))),
+    );
   }
 
   Future<void> _previewFile(GithubFile file) async {
@@ -179,26 +180,14 @@ class _BrowserScreenState extends State<BrowserScreen> {
   }
 
   /// Logic dùng chung để tải 1 thư mục (hoặc cả repo, khi path rỗng) dạng .zip.
+  /// Bước đếm file + xác nhận vẫn ở màn hình hiện tại (nhanh), nhưng bước tải
+  /// + nén thực sự chạy nền qua DownloadManager để không chặn màn hình.
   Future<void> _downloadAsZip({required String path, required String displayName}) async {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        content: SizedBox(
-          height: 60,
-          child: Row(children: [
-            const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 3)),
-            const SizedBox(width: 16),
-            Text(t('browser.checking_file_count')),
-          ]),
-        ),
-      ),
-    );
-
+    setState(() => _loading = true);
     final owner = _ownerController.text.trim();
     final repo = _repoController.text.trim();
     final files = await _guard(() => _githubService!.listAllFilesRecursive(owner, repo, path));
-    if (mounted) Navigator.pop(context);
+    if (mounted) setState(() => _loading = false);
     if (files == null || !mounted) return;
 
     if (files.isEmpty) {
@@ -226,41 +215,18 @@ class _BrowserScreenState extends State<BrowserScreen> {
     );
     if (confirm != true) return;
 
-    final progressNotifier = ValueNotifier<String>(t('browser.zip_preparing'));
-    if (!mounted) return;
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        content: ValueListenableBuilder<String>(
-          valueListenable: progressNotifier,
-          builder: (context, value, _) => Row(
-            children: [
-              const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 3)),
-              const SizedBox(width: 16),
-              Expanded(child: Text(value)),
-            ],
-          ),
-        ),
+    DownloadManager.instance.runDownload(
+      label: '$displayName.zip',
+      navigatorKey: navigatorKey,
+      fetch: (onProgress) => _githubService!.zipFiles(
+        files,
+        path,
+        onProgress: (done, total) => onProgress(total > 0 ? done / total : null),
       ),
+      save: (bytes) => DownloadsService.saveBytes('$displayName.zip', bytes),
+      onSuccess: (ctx, savedPath) => showTopNotification(ctx, t('common.saved_at', {'path': savedPath})),
+      onError: (ctx, error) => ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text(error))),
     );
-
-    final zipBytes = await _guard(() => _githubService!.zipFiles(
-          files,
-          path,
-          onProgress: (done, total) => progressNotifier.value =
-              t('browser.zip_progress', {'done': done.toString(), 'total': total.toString()}),
-        ));
-
-    if (mounted) Navigator.pop(context);
-    if (zipBytes == null) return;
-
-    final savedPath = await DownloadsService.saveBytes('$displayName.zip', zipBytes);
-
-    if (mounted && savedPath != null) {
-      showTopNotification(context, t('common.saved_at', {'path': savedPath}));
-    }
   }
 
   Future<void> _handleFolderLongPress(GithubFile folder) =>
@@ -292,7 +258,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
     if (preview) {
       await _previewFile(meta);
     } else {
-      await _downloadFile(meta);
+      _downloadFile(meta);
     }
   }
 
