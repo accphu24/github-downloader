@@ -457,7 +457,21 @@ class GithubService {
   }) async {
     final request = http.Request('GET', Uri.parse(archiveDownloadUrl));
     request.headers.addAll(_headers);
-    final streamedResponse = await http.Client().send(request);
+    request.followRedirects = false;
+
+    var streamedResponse = await http.Client().send(request);
+
+    // GitHub trả về redirect (302) tới kho lưu trữ Azure Blob Storage - URL đó đã
+    // có chữ ký sẵn trong query string, nên phải gọi lại KHÔNG kèm header
+    // Authorization (gửi kèm sẽ bị Azure từ chối, trả về trang lỗi thay vì file zip).
+    if (streamedResponse.statusCode == 301 || streamedResponse.statusCode == 302 || streamedResponse.statusCode == 303) {
+      final location = streamedResponse.headers['location'];
+      if (location == null) {
+        throw Exception('Không tìm thấy địa chỉ chuyển hướng khi tải artifact');
+      }
+      final redirectRequest = http.Request('GET', Uri.parse(location));
+      streamedResponse = await http.Client().send(redirectRequest);
+    }
 
     if (streamedResponse.statusCode == 401) throw GithubUnauthorizedException();
     if (streamedResponse.statusCode < 200 || streamedResponse.statusCode >= 300) {

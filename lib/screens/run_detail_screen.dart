@@ -175,6 +175,16 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
         },
       ),
       save: (zipBytes) async {
+        // Kiểm tra "chữ ký" đầu file để chắc chắn đây thật sự là file zip (PK\x03\x04),
+        // tránh crash khó hiểu nếu server trả về nội dung khác (vd trang lỗi HTML).
+        final isValidZip = zipBytes.length >= 4 &&
+            zipBytes[0] == 0x50 &&
+            zipBytes[1] == 0x4B &&
+            (zipBytes[2] == 0x03 || zipBytes[2] == 0x05 || zipBytes[2] == 0x07);
+        if (!isValidZip) {
+          throw Exception('Dữ liệu tải về không đúng định dạng zip (có thể do lỗi mạng hoặc link đã hết hạn)');
+        }
+
         final archive = ZipDecoder().decodeBytes(zipBytes);
         final savedPaths = <String>[];
         for (final entry in archive.files) {
