@@ -455,6 +455,26 @@ class GithubService {
     String archiveDownloadUrl, {
     void Function(int received, int? total)? onProgress,
   }) async {
+    const maxAttempts = 3;
+    for (var attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        return await _downloadArtifactZipOnce(archiveDownloadUrl, onProgress: onProgress);
+      } catch (e) {
+        final isNetworkGlitch = e.toString().contains('Connection closed') ||
+            e.toString().contains('SocketException') ||
+            e.toString().contains('Connection reset');
+        if (!isNetworkGlitch || attempt == maxAttempts) rethrow;
+        // Mạng chập chờn giữa chừng -> chờ 1 chút rồi thử lại
+        await Future.delayed(Duration(seconds: attempt));
+      }
+    }
+    throw Exception('Tải artifact thất bại sau $maxAttempts lần thử');
+  }
+
+  Future<List<int>> _downloadArtifactZipOnce(
+    String archiveDownloadUrl, {
+    void Function(int received, int? total)? onProgress,
+  }) async {
     final request = http.Request('GET', Uri.parse(archiveDownloadUrl));
     request.headers.addAll(_headers);
     request.followRedirects = false;
@@ -484,6 +504,13 @@ class GithubService {
       bytes.addAll(chunk);
       onProgress?.call(bytes.length, total);
     }
+
+    // Nếu server có báo trước tổng dung lượng, kiểm tra tải đủ chưa - tránh
+    // lưu nhầm file zip bị cắt cụt giữa chừng (gây lỗi khi giải nén).
+    if (total != null && bytes.length != total) {
+      throw Exception('Connection closed while receiving data (tải thiếu $total - ${bytes.length} bytes)');
+    }
+
     return bytes;
   }
 
