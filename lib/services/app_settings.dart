@@ -19,6 +19,8 @@ class AppSettings extends ChangeNotifier {
   bool musicEnabled = false;
   double musicVolume = 0.5;
 
+  bool biometricLockEnabled = false;
+
   bool _loaded = false;
   bool get loaded => _loaded;
 
@@ -29,6 +31,7 @@ class AppSettings extends ChangeNotifier {
   static const _kMusicUrl = 'settings_music_url';
   static const _kMusicEnabled = 'settings_music_enabled';
   static const _kMusicVolume = 'settings_music_volume';
+  static const _kBiometricLock = 'settings_biometric_lock';
 
   /// Danh sách màu chủ đạo cho người dùng chọn.
   static const presetColors = <Color>[
@@ -64,6 +67,9 @@ class AppSettings extends ChangeNotifier {
 
       final mv = await _storage.read(key: _kMusicVolume);
       if (mv != null) musicVolume = double.tryParse(mv) ?? musicVolume;
+
+      final bl = await _storage.read(key: _kBiometricLock);
+      if (bl != null) biometricLockEnabled = bl == 'true';
     } catch (_) {
       // Nếu đọc lỗi thì dùng giá trị mặc định, không chặn khởi động app.
     }
@@ -111,5 +117,36 @@ class AppSettings extends ChangeNotifier {
     musicVolume = value;
     await _storage.write(key: _kMusicVolume, value: value.toString());
     notifyListeners();
+  }
+
+  Future<void> setBiometricLockEnabled(bool value) async {
+    biometricLockEnabled = value;
+    await _storage.write(key: _kBiometricLock, value: value.toString());
+    notifyListeners();
+  }
+
+  /// Dùng cho tính năng xuất/nhập sao lưu (không bao gồm phiên đăng nhập GitHub).
+  Map<String, dynamic> toJson() => {
+        'fontScale': fontScale,
+        'themeMode': themeMode.name,
+        'seedColor': seedColor.toARGB32(),
+        'locale': locale,
+        'musicUrl': musicUrl,
+        'musicEnabled': musicEnabled,
+        'musicVolume': musicVolume,
+        'biometricLockEnabled': biometricLockEnabled,
+      };
+
+  Future<void> applyJson(Map<String, dynamic> json) async {
+    if (json['fontScale'] is num) await setFontScale((json['fontScale'] as num).toDouble());
+    if (json['themeMode'] is String) {
+      await setThemeMode(ThemeMode.values.firstWhere((e) => e.name == json['themeMode'], orElse: () => ThemeMode.system));
+    }
+    if (json['seedColor'] is int) await setSeedColor(Color(json['seedColor'] as int));
+    if (json['locale'] is String) await setLocale(json['locale'] as String);
+    if (json['musicUrl'] is String) await setMusicUrl(json['musicUrl'] as String);
+    if (json['musicEnabled'] is bool) await setMusicEnabled(json['musicEnabled'] as bool);
+    if (json['musicVolume'] is num) await setMusicVolume((json['musicVolume'] as num).toDouble());
+    if (json['biometricLockEnabled'] is bool) await setBiometricLockEnabled(json['biometricLockEnabled'] as bool);
   }
 }

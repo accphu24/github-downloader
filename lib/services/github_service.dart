@@ -249,6 +249,25 @@ class GithubService {
         'Accept': 'application/vnd.github+json',
       };
 
+  /// Tự động thử lại tối đa [maxAttempts] lần nếu gặp lỗi mạng chập chờn
+  /// (không thử lại nếu là lỗi 401 hay lỗi khác không liên quan tới mạng).
+  Future<T> _withRetry<T>(Future<T> Function() action, {int maxAttempts = 3}) async {
+    for (var attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        return await action();
+      } catch (e) {
+        final isNetworkGlitch = e.toString().contains('Connection closed') ||
+            e.toString().contains('SocketException') ||
+            e.toString().contains('Connection reset') ||
+            e.toString().contains('Failed host lookup') ||
+            e.toString().contains('Network is unreachable');
+        if (e is GithubUnauthorizedException || !isNetworkGlitch || attempt == maxAttempts) rethrow;
+        await Future.delayed(Duration(seconds: attempt));
+      }
+    }
+    throw Exception('Thất bại sau $maxAttempts lần thử');
+  }
+
   void _checkStatus(http.Response response, String contextMessage) {
     if (response.statusCode == 401) {
       throw GithubUnauthorizedException();
@@ -262,54 +281,60 @@ class GithubService {
   /// (sở hữu, được thêm làm collaborator, hoặc thuộc tổ chức), kèm quyền hạn cụ thể.
   /// Tự động lấy hết các trang (phân trang) qua header 'Link' của GitHub.
   Future<List<GithubRepo>> listUserRepos() async {
-    final repos = <GithubRepo>[];
-    Uri? url = Uri.https('api.github.com', '/user/repos', {
-      'per_page': '100',
-      'sort': 'updated',
-      'affiliation': 'owner,collaborator,organization_member',
-    });
+    return _withRetry(() async {
+      final repos = <GithubRepo>[];
+      Uri? url = Uri.https('api.github.com', '/user/repos', {
+        'per_page': '100',
+        'sort': 'updated',
+        'affiliation': 'owner,collaborator,organization_member',
+      });
 
-    while (url != null) {
-      final response = await http.get(url, headers: _headers);
-      _checkStatus(response, 'Không lấy được danh sách repo');
+      while (url != null) {
+        final response = await http.get(url, headers: _headers);
+        _checkStatus(response, 'Không lấy được danh sách repo');
 
-      final List data = jsonDecode(response.body);
-      repos.addAll(data.map((e) => GithubRepo.fromJson(e)));
+        final List data = jsonDecode(response.body);
+        repos.addAll(data.map((e) => GithubRepo.fromJson(e)));
 
-      url = null;
-      final linkHeader = response.headers['link'];
-      if (linkHeader != null) {
-        final parts = linkHeader.split(',');
-        for (final part in parts) {
-          if (part.contains('rel="next"')) {
-            final match = RegExp(r'<(.*)>').firstMatch(part);
-            if (match != null) url = Uri.parse(match.group(1)!);
+        url = null;
+        final linkHeader = response.headers['link'];
+        if (linkHeader != null) {
+          final parts = linkHeader.split(',');
+          for (final part in parts) {
+            if (part.contains('rel="next"')) {
+              final match = RegExp(r'<(.*)>').firstMatch(part);
+              if (match != null) url = Uri.parse(match.group(1)!);
+            }
           }
         }
       }
-    }
 
-    return repos;
+      return repos;
+    });
   }
 
   /// Liệt kê file/thư mục trong repo tại 1 path cụ thể.
   /// Repo public không cần token, repo private cần token có scope 'repo'.
   Future<List<GithubFile>> listContents(String owner, String repo, {String path = ''}) async {
-    final url = Uri.https('api.github.com', '/repos/$owner/$repo/contents/$path');
-    final response = await http.get(url, headers: _headers);
-    _checkStatus(response, 'Không lấy được nội dung repo. Repo có thể là private, không tồn tại, hoặc token không đủ quyền.');
+    return _withRetry(() async {
+      final url = Uri.https('api.github.com', '/repos/$owner/$repo/contents/$path');
+      final response = await http.get(url, headers: _headers);
+      _checkStatus(response, 'Không lấy được nội dung repo. Repo có thể là private, không tồn tại, hoặc token không đủ quyền.');
 
-    final List data = jsonDecode(response.body);
-    return data.map((e) => GithubFile.fromJson(e)).toList();
+      final List data = jsonDecode(response.body);
+      return data.map((e) => GithubFile.fromJson(e)).toList();
+    });
   }
 
   /// Lấy thông tin (bao gồm download_url) của đúng 1 file, dùng khi chỉ có path
   /// (ví dụ từ kết quả tìm kiếm toàn repo, chưa có sẵn download_url).
   Future<GithubFile> getFileMeta(String owner, String repo, String path) async {
-    final url = Uri.https('api.github.com', '/repos/$owner/$repo/contents/$path');
-    final response = await http.get(url, headers: _headers);
-    _checkStatus(response, 'Không lấy được thông tin file');
-    return GithubFile.fromJson(jsonDecode(response.body));
+    return _withRetry(() async {
+      final url = Uri.https('api.github.com', '/repos/$owner/$repo/contents/$path');
+      final response = await http.get(url, headers: _headers);
+      _checkStatus(response, 'Không lấy được thông tin file');
+      return GithubFile.fromJson(jsonDecode(response.body));
+    });
   }
 
   /// Lấy default branch của repo (cần cho tìm kiếm toàn repo qua Git Trees API).
@@ -325,25 +350,29 @@ class GithubService {
   /// dùng Git Trees API (1 request lấy hết cây thư mục, nhanh hơn nhiều so với
   /// duyệt đệ quy từng thư mục).
   Future<List<GithubFile>> searchFilesInRepo(String owner, String repo, String query) async {
-    final branch = await getDefaultBranch(owner, repo);
-    final url = Uri.https('api.github.com', '/repos/$owner/$repo/git/trees/$branch', {'recursive': '1'});
-    final response = await http.get(url, headers: _headers);
-    _checkStatus(response, 'Không tìm kiếm được trong repo');
+    return _withRetry(() async {
+      final branch = await getDefaultBranch(owner, repo);
+      final url = Uri.https('api.github.com', '/repos/$owner/$repo/git/trees/$branch', {'recursive': '1'});
+      final response = await http.get(url, headers: _headers);
+      _checkStatus(response, 'Không tìm kiếm được trong repo');
 
-    final data = jsonDecode(response.body);
-    final List tree = data['tree'] ?? [];
-    final lowerQuery = query.toLowerCase();
+      final data = jsonDecode(response.body);
+      final List tree = data['tree'] ?? [];
+      final lowerQuery = query.toLowerCase();
 
-    return tree
-        .where((e) => e['type'] == 'blob' && (e['path'] as String).toLowerCase().contains(lowerQuery))
-        .map((e) => GithubFile.fromTreeEntry(e))
-        .toList();
+      return tree
+          .where((e) => e['type'] == 'blob' && (e['path'] as String).toLowerCase().contains(lowerQuery))
+          .map((e) => GithubFile.fromTreeEntry(e))
+          .toList();
+    });
   }
 
   Future<List<int>> downloadFile(String downloadUrl) async {
-    final response = await http.get(Uri.parse(downloadUrl), headers: _headers);
-    _checkStatus(response, 'Tải file thất bại');
-    return response.bodyBytes;
+    return _withRetry(() async {
+      final response = await http.get(Uri.parse(downloadUrl), headers: _headers);
+      _checkStatus(response, 'Tải file thất bại');
+      return response.bodyBytes;
+    });
   }
 
   /// Duyệt đệ quy toàn bộ file bên trong 1 thư mục (bao gồm thư mục con).
@@ -392,61 +421,73 @@ class GithubService {
 
   /// Lấy danh sách các lần chạy GitHub Actions gần nhất (build/CI).
   Future<List<WorkflowRun>> listWorkflowRuns(String owner, String repo) async {
-    final url = Uri.https('api.github.com', '/repos/$owner/$repo/actions/runs', {'per_page': '30'});
-    final response = await http.get(url, headers: _headers);
-    _checkStatus(response, 'Không lấy được trạng thái Actions');
-    final data = jsonDecode(response.body);
-    final List runs = data['workflow_runs'] ?? [];
-    return runs.map((e) => WorkflowRun.fromJson(e)).toList();
+    return _withRetry(() async {
+      final url = Uri.https('api.github.com', '/repos/$owner/$repo/actions/runs', {'per_page': '30'});
+      final response = await http.get(url, headers: _headers);
+      _checkStatus(response, 'Không lấy được trạng thái Actions');
+      final data = jsonDecode(response.body);
+      final List runs = data['workflow_runs'] ?? [];
+      return runs.map((e) => WorkflowRun.fromJson(e)).toList();
+    });
   }
 
   /// Lấy lịch sử commit gần nhất của repo.
   Future<List<GithubCommit>> listCommits(String owner, String repo) async {
-    final url = Uri.https('api.github.com', '/repos/$owner/$repo/commits', {'per_page': '30'});
-    final response = await http.get(url, headers: _headers);
-    _checkStatus(response, 'Không lấy được lịch sử commit');
-    final List data = jsonDecode(response.body);
-    return data.map((e) => GithubCommit.fromJson(e)).toList();
+    return _withRetry(() async {
+      final url = Uri.https('api.github.com', '/repos/$owner/$repo/commits', {'per_page': '30'});
+      final response = await http.get(url, headers: _headers);
+      _checkStatus(response, 'Không lấy được lịch sử commit');
+      final List data = jsonDecode(response.body);
+      return data.map((e) => GithubCommit.fromJson(e)).toList();
+    });
   }
 
   /// Lấy ngày sửa đổi (commit) gần nhất của 1 file cụ thể.
   /// Lưu ý: mỗi lần gọi tốn 1 request API, nên chỉ dùng khi cần (vd: sort theo ngày).
   Future<DateTime?> getLastCommitDate(String owner, String repo, String path) async {
-    final url = Uri.https('api.github.com', '/repos/$owner/$repo/commits', {'path': path, 'per_page': '1'});
-    final response = await http.get(url, headers: _headers);
-    _checkStatus(response, 'Không lấy được ngày sửa đổi');
-    final List data = jsonDecode(response.body);
-    if (data.isEmpty) return null;
-    final dateStr = data[0]['commit']?['author']?['date'];
-    return dateStr != null ? DateTime.parse(dateStr) : null;
+    return _withRetry(() async {
+      final url = Uri.https('api.github.com', '/repos/$owner/$repo/commits', {'path': path, 'per_page': '1'});
+      final response = await http.get(url, headers: _headers);
+      _checkStatus(response, 'Không lấy được ngày sửa đổi');
+      final List data = jsonDecode(response.body);
+      if (data.isEmpty) return null;
+      final dateStr = data[0]['commit']?['author']?['date'];
+      return dateStr != null ? DateTime.parse(dateStr) : null;
+    });
   }
 
   /// Lấy danh sách job (và các bước/step bên trong) của 1 lần chạy Actions.
   Future<List<WorkflowJob>> listJobsForRun(String owner, String repo, int runId) async {
-    final url = Uri.https('api.github.com', '/repos/$owner/$repo/actions/runs/$runId/jobs');
-    final response = await http.get(url, headers: _headers);
-    _checkStatus(response, 'Không lấy được danh sách job');
-    final data = jsonDecode(response.body);
-    final List jobs = data['jobs'] ?? [];
-    return jobs.map((e) => WorkflowJob.fromJson(e)).toList();
+    return _withRetry(() async {
+      final url = Uri.https('api.github.com', '/repos/$owner/$repo/actions/runs/$runId/jobs');
+      final response = await http.get(url, headers: _headers);
+      _checkStatus(response, 'Không lấy được danh sách job');
+      final data = jsonDecode(response.body);
+      final List jobs = data['jobs'] ?? [];
+      return jobs.map((e) => WorkflowJob.fromJson(e)).toList();
+    });
   }
 
   /// Lấy toàn bộ log dạng text của 1 job.
   Future<String> getJobLogs(String owner, String repo, int jobId) async {
-    final url = Uri.https('api.github.com', '/repos/$owner/$repo/actions/jobs/$jobId/logs');
-    final response = await http.get(url, headers: _headers);
-    _checkStatus(response, 'Không lấy được log');
-    return response.body;
+    return _withRetry(() async {
+      final url = Uri.https('api.github.com', '/repos/$owner/$repo/actions/jobs/$jobId/logs');
+      final response = await http.get(url, headers: _headers);
+      _checkStatus(response, 'Không lấy được log');
+      return response.body;
+    });
   }
 
   /// Lấy danh sách artifact (file build ra, ví dụ APK) của 1 lần chạy Actions.
   Future<List<Artifact>> listArtifacts(String owner, String repo, int runId) async {
-    final url = Uri.https('api.github.com', '/repos/$owner/$repo/actions/runs/$runId/artifacts');
-    final response = await http.get(url, headers: _headers);
-    _checkStatus(response, 'Không lấy được artifact');
-    final data = jsonDecode(response.body);
-    final List artifacts = data['artifacts'] ?? [];
-    return artifacts.map((e) => Artifact.fromJson(e)).toList();
+    return _withRetry(() async {
+      final url = Uri.https('api.github.com', '/repos/$owner/$repo/actions/runs/$runId/artifacts');
+      final response = await http.get(url, headers: _headers);
+      _checkStatus(response, 'Không lấy được artifact');
+      final data = jsonDecode(response.body);
+      final List artifacts = data['artifacts'] ?? [];
+      return artifacts.map((e) => Artifact.fromJson(e)).toList();
+    });
   }
 
   /// Tải nội dung artifact (GitHub luôn đóng gói dạng .zip, kể cả khi bên trong chỉ có 1 file).
@@ -455,63 +496,45 @@ class GithubService {
     String archiveDownloadUrl, {
     void Function(int received, int? total)? onProgress,
   }) async {
-    const maxAttempts = 3;
-    for (var attempt = 1; attempt <= maxAttempts; attempt++) {
-      try {
-        return await _downloadArtifactZipOnce(archiveDownloadUrl, onProgress: onProgress);
-      } catch (e) {
-        final isNetworkGlitch = e.toString().contains('Connection closed') ||
-            e.toString().contains('SocketException') ||
-            e.toString().contains('Connection reset');
-        if (!isNetworkGlitch || attempt == maxAttempts) rethrow;
-        // Mạng chập chờn giữa chừng -> chờ 1 chút rồi thử lại
-        await Future.delayed(Duration(seconds: attempt));
+    return _withRetry(() async {
+      final request = http.Request('GET', Uri.parse(archiveDownloadUrl));
+      request.headers.addAll(_headers);
+      request.followRedirects = false;
+
+      var streamedResponse = await http.Client().send(request);
+
+      // GitHub trả về redirect (302) tới kho lưu trữ Azure Blob Storage - URL đó đã
+      // có chữ ký sẵn trong query string, nên phải gọi lại KHÔNG kèm header
+      // Authorization (gửi kèm sẽ bị Azure từ chối, trả về trang lỗi thay vì file zip).
+      if (streamedResponse.statusCode == 301 || streamedResponse.statusCode == 302 || streamedResponse.statusCode == 303) {
+        final location = streamedResponse.headers['location'];
+        if (location == null) {
+          throw Exception('Không tìm thấy địa chỉ chuyển hướng khi tải artifact');
+        }
+        final redirectRequest = http.Request('GET', Uri.parse(location));
+        streamedResponse = await http.Client().send(redirectRequest);
       }
-    }
-    throw Exception('Tải artifact thất bại sau $maxAttempts lần thử');
-  }
 
-  Future<List<int>> _downloadArtifactZipOnce(
-    String archiveDownloadUrl, {
-    void Function(int received, int? total)? onProgress,
-  }) async {
-    final request = http.Request('GET', Uri.parse(archiveDownloadUrl));
-    request.headers.addAll(_headers);
-    request.followRedirects = false;
-
-    var streamedResponse = await http.Client().send(request);
-
-    // GitHub trả về redirect (302) tới kho lưu trữ Azure Blob Storage - URL đó đã
-    // có chữ ký sẵn trong query string, nên phải gọi lại KHÔNG kèm header
-    // Authorization (gửi kèm sẽ bị Azure từ chối, trả về trang lỗi thay vì file zip).
-    if (streamedResponse.statusCode == 301 || streamedResponse.statusCode == 302 || streamedResponse.statusCode == 303) {
-      final location = streamedResponse.headers['location'];
-      if (location == null) {
-        throw Exception('Không tìm thấy địa chỉ chuyển hướng khi tải artifact');
+      if (streamedResponse.statusCode == 401) throw GithubUnauthorizedException();
+      if (streamedResponse.statusCode < 200 || streamedResponse.statusCode >= 300) {
+        throw Exception('Tải artifact thất bại (mã lỗi ${streamedResponse.statusCode})');
       }
-      final redirectRequest = http.Request('GET', Uri.parse(location));
-      streamedResponse = await http.Client().send(redirectRequest);
-    }
 
-    if (streamedResponse.statusCode == 401) throw GithubUnauthorizedException();
-    if (streamedResponse.statusCode < 200 || streamedResponse.statusCode >= 300) {
-      throw Exception('Tải artifact thất bại (mã lỗi ${streamedResponse.statusCode})');
-    }
+      final total = streamedResponse.contentLength;
+      final bytes = <int>[];
+      await for (final chunk in streamedResponse.stream) {
+        bytes.addAll(chunk);
+        onProgress?.call(bytes.length, total);
+      }
 
-    final total = streamedResponse.contentLength;
-    final bytes = <int>[];
-    await for (final chunk in streamedResponse.stream) {
-      bytes.addAll(chunk);
-      onProgress?.call(bytes.length, total);
-    }
+      // Nếu server có báo trước tổng dung lượng, kiểm tra tải đủ chưa - tránh
+      // lưu nhầm file zip bị cắt cụt giữa chừng (gây lỗi khi giải nén).
+      if (total != null && bytes.length != total) {
+        throw Exception('Connection closed while receiving data (tải thiếu $total - ${bytes.length} bytes)');
+      }
 
-    // Nếu server có báo trước tổng dung lượng, kiểm tra tải đủ chưa - tránh
-    // lưu nhầm file zip bị cắt cụt giữa chừng (gây lỗi khi giải nén).
-    if (total != null && bytes.length != total) {
-      throw Exception('Connection closed while receiving data (tải thiếu $total - ${bytes.length} bytes)');
-    }
-
-    return bytes;
+      return bytes;
+    });
   }
 
   /// Cập nhật nội dung 1 file và commit thẳng lên GitHub.
@@ -539,5 +562,29 @@ class GithubService {
       throw Exception('File đã bị thay đổi ở nơi khác (conflict). Hãy mở lại file để lấy bản mới nhất rồi sửa lại.');
     }
     _checkStatus(response, 'Lưu file thất bại');
+  }
+
+  /// Tải 1 file MỚI (chưa tồn tại trong repo) lên, dùng cho tính năng "tải file từ máy lên repo".
+  /// Khác với updateFile: không cần sha vì đây là tạo file mới, không phải sửa file có sẵn.
+  Future<void> uploadNewFile(
+    String owner,
+    String repo,
+    String path,
+    List<int> bytes, {
+    String? commitMessage,
+  }) async {
+    final url = Uri.https('api.github.com', '/repos/$owner/$repo/contents/$path');
+    final response = await http.put(
+      url,
+      headers: {..._headers, 'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'message': commitMessage ?? 'Add $path via GitHub Repo Downloader',
+        'content': base64Encode(bytes),
+      }),
+    );
+    if (response.statusCode == 422) {
+      throw Exception('Đã tồn tại file tại đường dẫn này. Đổi tên khác hoặc dùng tính năng sửa file để ghi đè.');
+    }
+    _checkStatus(response, 'Tải file lên thất bại');
   }
 }

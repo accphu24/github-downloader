@@ -23,4 +23,9 @@ class PinnedReposService {
     await _storage.write(key: _key, value: jsonEncode(pinned.toList()));
     return pinned;
   }
+
+  /// Ghi đè toàn bộ danh sách ghim, dùng khi khôi phục từ file sao lưu.
+  Future<void> setAll(List<String> fullNames) async {
+    await _storage.write(key: _key, value: jsonEncode(fullNames));
+  }
 }

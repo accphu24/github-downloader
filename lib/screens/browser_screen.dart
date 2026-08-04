@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
 import '../services/auth_service.dart';
 import '../services/github_service.dart';
 import '../services/downloads_service.dart';
@@ -235,6 +236,72 @@ class _BrowserScreenState extends State<BrowserScreen> {
   Future<void> _downloadWholeRepoAsZip() =>
       _downloadAsZip(path: '', displayName: _repoController.text.trim());
 
+  /// Chọn 1 file từ máy, xác nhận tên/commit message, rồi tải lên thành file mới trong repo
+  /// (tại thư mục đang duyệt hiện tại).
+  Future<void> _handleUploadFile() async {
+    final result = await FilePicker.platform.pickFiles(withData: true);
+    if (result == null || result.files.isEmpty) return;
+    final picked = result.files.single;
+    final bytes = picked.bytes;
+    if (bytes == null) {
+      _showError(t('browser.upload_read_error'));
+      return;
+    }
+
+    final nameController = TextEditingController(text: picked.name);
+    final messageController = TextEditingController(text: 'Add ${picked.name} via GitHub Repo Downloader');
+
+    if (!mounted) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(t('browser.upload_confirm_title')),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameController,
+              decoration: InputDecoration(labelText: t('browser.upload_filename_label'), border: const OutlineInputBorder()),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: messageController,
+              decoration: InputDecoration(labelText: t('editor.commit_message_label'), border: const OutlineInputBorder()),
+              maxLines: 2,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(t('common.cancel'))),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(t('browser.upload_button'))),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    final targetPath = _currentPath.isEmpty ? nameController.text.trim() : '$_currentPath/${nameController.text.trim()}';
+
+    setState(() => _loading = true);
+    final success = await _guard(() => _githubService!.uploadNewFile(
+          _ownerController.text.trim(),
+          _repoController.text.trim(),
+          targetPath,
+          bytes,
+          commitMessage: messageController.text.trim(),
+        ).then((_) => true));
+    if (mounted) setState(() => _loading = false);
+
+    if (success == true && mounted) {
+      showTopNotification(context, t('browser.upload_success'));
+      if (_currentPath.isEmpty) {
+        await _loadRepo();
+      } else {
+        await _openFolder(_currentPath);
+      }
+    }
+  }
+
   Future<void> _runSearch(String query) async {
     if (query.trim().isEmpty) {
       setState(() => _searchResults = []);
@@ -391,6 +458,11 @@ class _BrowserScreenState extends State<BrowserScreen> {
                   _searchResults = [];
                 }
               }),
+            ),
+            IconButton(
+              icon: const Icon(Icons.upload_file_rounded),
+              tooltip: t('browser.upload_tooltip'),
+              onPressed: _handleUploadFile,
             ),
           ],
           IconButton(icon: const Icon(Icons.logout_rounded), onPressed: _logout),

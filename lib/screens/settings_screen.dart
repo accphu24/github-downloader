@@ -1,7 +1,12 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
 import '../services/app_settings.dart';
 import '../services/music_service.dart';
+import '../services/pinned_repos_service.dart';
+import '../services/downloads_service.dart';
 import '../l10n/strings.dart';
+import '../widgets/top_notification.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -12,6 +17,7 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   late final TextEditingController _musicUrlController;
+  final _pinnedService = PinnedReposService();
 
   @override
   void initState() {
@@ -23,6 +29,52 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void dispose() {
     _musicUrlController.dispose();
     super.dispose();
+  }
+
+  Future<void> _exportBackup() async {
+    final pinned = await _pinnedService.getPinned();
+    final backup = {
+      'settings': AppSettings.instance.toJson(),
+      'pinnedRepos': pinned.toList(),
+    };
+    final jsonStr = const JsonEncoder.withIndent('  ').convert(backup);
+    final savedPath = await DownloadsService.saveBytes('github_downloader_backup.json', utf8.encode(jsonStr));
+    if (mounted && savedPath != null) {
+      showTopNotification(context, t('settings.backup_export_success', {'path': savedPath}));
+    }
+  }
+
+  Future<void> _importBackup() async {
+    final result = await FilePicker.platform.pickFiles(
+      withData: true,
+      type: FileType.custom,
+      allowedExtensions: ['json'],
+    );
+    if (result == null || result.files.isEmpty) return;
+    final bytes = result.files.single.bytes;
+    if (bytes == null) return;
+
+    try {
+      final jsonStr = utf8.decode(bytes);
+      final data = jsonDecode(jsonStr) as Map<String, dynamic>;
+
+      if (data['settings'] is Map<String, dynamic>) {
+        await AppSettings.instance.applyJson(data['settings'] as Map<String, dynamic>);
+      }
+      if (data['pinnedRepos'] is List) {
+        await _pinnedService.setAll((data['pinnedRepos'] as List).map((e) => e.toString()).toList());
+      }
+
+      _musicUrlController.text = AppSettings.instance.musicUrl;
+      if (mounted) {
+        showTopNotification(context, t('settings.backup_import_success'));
+        setState(() {});
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t('settings.backup_import_error'))));
+      }
+    }
   }
 
   @override
@@ -192,6 +244,56 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       onChanged: (v) => settings.setLocale(v!),
                     ),
                   ],
+                ),
+              ),
+              const SizedBox(height: 24),
+              _sectionTitle(context, t('settings.section_security')),
+              const SizedBox(height: 8),
+              Card(
+                color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
+                child: SwitchListTile(
+                  title: Text(t('settings.biometric_lock')),
+                  secondary: const Icon(Icons.fingerprint_rounded),
+                  value: settings.biometricLockEnabled,
+                  onChanged: (v) => settings.setBiometricLockEnabled(v),
+                ),
+              ),
+              const SizedBox(height: 24),
+              _sectionTitle(context, t('settings.section_backup')),
+              const SizedBox(height: 8),
+              Card(
+                color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              icon: const Icon(Icons.upload_rounded),
+                              label: Text(t('settings.backup_export')),
+                              onPressed: _exportBackup,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              icon: const Icon(Icons.download_rounded),
+                              label: Text(t('settings.backup_import')),
+                              onPressed: _importBackup,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        t('settings.backup_note'),
+                        style: TextStyle(fontSize: 12, color: scheme.outline),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ],

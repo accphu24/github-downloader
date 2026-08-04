@@ -63,6 +63,14 @@ jobs:
                   1,
               )
 
+          # Thêm quyền cho tính năng khoá vân tay/khuôn mặt (local_auth)
+          if 'USE_BIOMETRIC' not in content:
+              content = content.replace(
+                  "<application",
+                  '<uses-permission android:name="android.permission.USE_BIOMETRIC" />\n    <application',
+                  1,
+              )
+
           # Thêm taskAffinity="" cho MainActivity để tránh lỗi quay vòng khi redirect từ trình duyệt
           if 'android:name=".MainActivity"' in content and 'taskAffinity' not in content.split('android:name=".MainActivity"')[1].split('>')[0]:
               content = content.replace(
@@ -85,6 +93,9 @@ jobs:
       - name: Cài dependencies
         run: flutter pub get
 
+      - name: Tạo icon app từ ảnh gốc
+        run: dart run flutter_launcher_icons
+
       - name: Build APK
         run: flutter build apk --release
 
@@ -93,3 +104,4 @@ jobs:
         with:
           name: github-downloader-apk
           path: build/app/outputs/flutter-apk/app-release.apk
+          compression-level: 0
