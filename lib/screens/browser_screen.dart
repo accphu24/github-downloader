@@ -239,7 +239,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
   /// Chọn 1 file từ máy, xác nhận tên/commit message, rồi tải lên thành file mới trong repo
   /// (tại thư mục đang duyệt hiện tại).
   Future<void> _handleUploadFile() async {
-    final result = await FilePicker.pickFiles(withData: true);
+    final result = await FilePicker.platform.pickFiles(withData: true);
     if (result == null || result.files.isEmpty) return;
     final picked = result.files.single;
     final bytes = picked.bytes;
