@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:archive/archive.dart';
+import 'log_service.dart';
 
 /// Lỗi riêng cho trường hợp token hết hạn / bị thu hồi (401),
 /// để UI có thể bắt riêng và tự động đăng xuất.
@@ -261,7 +262,11 @@ class GithubService {
             e.toString().contains('Connection reset') ||
             e.toString().contains('Failed host lookup') ||
             e.toString().contains('Network is unreachable');
-        if (e is GithubUnauthorizedException || !isNetworkGlitch || attempt == maxAttempts) rethrow;
+        if (e is GithubUnauthorizedException || !isNetworkGlitch || attempt == maxAttempts) {
+          LogService.instance.error('Gọi API GitHub thất bại (lần $attempt/$maxAttempts): $e');
+          rethrow;
+        }
+        LogService.instance.warn('Lỗi mạng chập chờn, thử lại lần ${attempt + 1}/$maxAttempts: $e');
         await Future.delayed(Duration(seconds: attempt));
       }
     }
@@ -270,9 +275,11 @@ class GithubService {
 
   void _checkStatus(http.Response response, String contextMessage) {
     if (response.statusCode == 401) {
+      LogService.instance.error('GitHub API 401 Unauthorized: $contextMessage');
       throw GithubUnauthorizedException();
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {
+      LogService.instance.warn('GitHub API lỗi ${response.statusCode}: $contextMessage');
       throw Exception('$contextMessage (mã lỗi ${response.statusCode})');
     }
   }

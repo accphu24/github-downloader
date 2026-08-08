@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'services/auth_service.dart';
 import 'services/app_settings.dart';
 import 'services/music_service.dart';
+import 'services/log_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/repo_list_screen.dart';
 import 'screens/lock_screen.dart';
@@ -22,17 +23,40 @@ class MyApp extends StatefulWidget {
   State<MyApp> createState() => _MyAppState();
 }
 
-class _MyAppState extends State<MyApp> {
+class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _bootstrap();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
   }
 
   Future<void> _bootstrap() async {
     await AppSettings.instance.load();
+    LogService.instance.info('App khởi động');
     if (AppSettings.instance.musicEnabled && AppSettings.instance.musicUrl.isNotEmpty) {
       await MusicService.instance.play(AppSettings.instance.musicUrl, volume: AppSettings.instance.musicVolume);
+    }
+  }
+
+  /// Mobile không có sự kiện "đóng app" đáng tin cậy (khi hệ điều hành giết
+  /// tiến trình, code Dart không kịp chạy). Cách thực tế nhất là tự lưu file
+  /// log ngay khi app bị ẩn xuống nền (paused) hoặc thoát hẳn (detached) -
+  /// đây chính là thời điểm người dùng "đóng app" theo thao tác thông thường
+  /// (bấm nút Home, vuốt khỏi Recent Apps, chuyển app khác...).
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (!AppSettings.instance.detailedLogEnabled) return;
+    if (state == AppLifecycleState.paused || state == AppLifecycleState.detached) {
+      LogService.instance.info('App chuyển sang nền/đóng (${state.name}) - tự lưu log');
+      LogService.instance.saveToDevice();
     }
   }
 

@@ -5,6 +5,7 @@ import '../services/app_settings.dart';
 import '../services/music_service.dart';
 import '../services/pinned_repos_service.dart';
 import '../services/downloads_service.dart';
+import '../services/log_service.dart';
 import '../l10n/strings.dart';
 import '../widgets/top_notification.dart';
 
@@ -77,13 +78,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Future<void> _exportLogNow() async {
+    final path = await LogService.instance.saveToDevice(force: true);
+    if (!mounted) return;
+    if (path != null) {
+      showTopNotification(context, t('settings.log_export_success', {'path': path}));
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t('settings.log_export_empty'))));
+    }
+  }
+
+  void _clearLog() {
+    LogService.instance.clear();
+    showTopNotification(context, t('settings.log_cleared'));
+  }
+
   @override
   Widget build(BuildContext context) {
     final settings = AppSettings.instance;
     final scheme = Theme.of(context).colorScheme;
 
     return AnimatedBuilder(
-      animation: settings,
+      animation: Listenable.merge([settings, LogService.instance]),
       builder: (context, _) {
         return Scaffold(
           appBar: AppBar(title: Text(t('settings.title'))),
@@ -291,6 +307,61 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       Text(
                         t('settings.backup_note'),
                         style: TextStyle(fontSize: 12, color: scheme.outline),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+              _sectionTitle(context, t('settings.section_log')),
+              const SizedBox(height: 8),
+              Card(
+                color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(t('settings.log_enable')),
+                        secondary: const Icon(Icons.bug_report_outlined),
+                        value: settings.detailedLogEnabled,
+                        onChanged: (v) => settings.setDetailedLogEnabled(v),
+                      ),
+                      Text(
+                        t('settings.log_enable_hint'),
+                        style: TextStyle(fontSize: 12, color: scheme.outline),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        t('settings.log_auto_save_hint'),
+                        style: TextStyle(fontSize: 12, color: scheme.outline),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        t('settings.log_entry_count', {'count': '${LogService.instance.entries.length}'}),
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              icon: const Icon(Icons.download_rounded),
+                              label: Text(t('settings.log_export_now')),
+                              onPressed: settings.detailedLogEnabled ? _exportLogNow : null,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              icon: const Icon(Icons.delete_outline_rounded),
+                              label: Text(t('settings.log_clear')),
+                              onPressed: LogService.instance.entries.isEmpty ? null : _clearLog,
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),

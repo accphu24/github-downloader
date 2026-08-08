@@ -21,6 +21,10 @@ class AppSettings extends ChangeNotifier {
 
   bool biometricLockEnabled = false;
 
+  /// Bật/tắt lưu log chi tiết (dùng cho debug). Khi bật, app sẽ tự động tải
+  /// file log về máy (thư mục Download) mỗi khi bị đóng/ẩn xuống nền.
+  bool detailedLogEnabled = false;
+
   bool _loaded = false;
   bool get loaded => _loaded;
 
@@ -32,6 +36,7 @@ class AppSettings extends ChangeNotifier {
   static const _kMusicEnabled = 'settings_music_enabled';
   static const _kMusicVolume = 'settings_music_volume';
   static const _kBiometricLock = 'settings_biometric_lock';
+  static const _kDetailedLog = 'settings_detailed_log';
 
   /// Danh sách màu chủ đạo cho người dùng chọn.
   static const presetColors = <Color>[
@@ -70,6 +75,9 @@ class AppSettings extends ChangeNotifier {
 
       final bl = await _storage.read(key: _kBiometricLock);
       if (bl != null) biometricLockEnabled = bl == 'true';
+
+      final dl = await _storage.read(key: _kDetailedLog);
+      if (dl != null) detailedLogEnabled = dl == 'true';
     } catch (_) {
       // Nếu đọc lỗi thì dùng giá trị mặc định, không chặn khởi động app.
     }
@@ -125,6 +133,12 @@ class AppSettings extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> setDetailedLogEnabled(bool value) async {
+    detailedLogEnabled = value;
+    await _storage.write(key: _kDetailedLog, value: value.toString());
+    notifyListeners();
+  }
+
   /// Dùng cho tính năng xuất/nhập sao lưu (không bao gồm phiên đăng nhập GitHub).
   Map<String, dynamic> toJson() => {
         'fontScale': fontScale,
@@ -135,6 +149,7 @@ class AppSettings extends ChangeNotifier {
         'musicEnabled': musicEnabled,
         'musicVolume': musicVolume,
         'biometricLockEnabled': biometricLockEnabled,
+        'detailedLogEnabled': detailedLogEnabled,
       };
 
   Future<void> applyJson(Map<String, dynamic> json) async {
@@ -148,5 +163,6 @@ class AppSettings extends ChangeNotifier {
     if (json['musicEnabled'] is bool) await setMusicEnabled(json['musicEnabled'] as bool);
     if (json['musicVolume'] is num) await setMusicVolume((json['musicVolume'] as num).toDouble());
     if (json['biometricLockEnabled'] is bool) await setBiometricLockEnabled(json['biometricLockEnabled'] as bool);
+    if (json['detailedLogEnabled'] is bool) await setDetailedLogEnabled(json['detailedLogEnabled'] as bool);
   }
 }

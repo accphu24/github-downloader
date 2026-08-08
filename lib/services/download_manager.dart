@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'log_service.dart';
 
 class DownloadTask {
   final String id;
@@ -54,16 +55,19 @@ class DownloadManager extends ChangeNotifier {
   }) {
     final id = '${DateTime.now().microsecondsSinceEpoch}';
     _start(id, label);
+    LogService.instance.info('Bắt đầu tải: $label');
 
     () async {
       try {
         final bytes = await fetch((p) => _updateProgress(id, p));
         final savedPath = await save(bytes);
         _finish(id);
+        LogService.instance.info('Tải xong: $label (${bytes.length} byte) -> $savedPath');
         final ctx = navigatorKey.currentContext;
         if (ctx != null && savedPath != null) onSuccess(ctx, savedPath);
       } catch (e) {
         _finish(id);
+        LogService.instance.error('Tải lỗi: $label -> $e');
         final ctx = navigatorKey.currentContext;
         if (ctx != null) onError(ctx, e.toString());
       }
