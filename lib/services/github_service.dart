@@ -252,7 +252,9 @@ class GithubService {
 
   /// Tự động thử lại tối đa [maxAttempts] lần nếu gặp lỗi mạng chập chờn
   /// (không thử lại nếu là lỗi 401 hay lỗi khác không liên quan tới mạng).
-  Future<T> _withRetry<T>(Future<T> Function() action, {int maxAttempts = 3}) async {
+  /// Thời gian chờ giữa các lần thử tăng dần (2s, 4s, 6s...) để có đủ thời gian
+  /// cho mạng phục hồi nếu bị hệ điều hành tạm cắt mạng nền lúc app chuyển xuống nền.
+  Future<T> _withRetry<T>(Future<T> Function() action, {int maxAttempts = 5}) async {
     for (var attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
         return await action();
@@ -261,13 +263,15 @@ class GithubService {
             e.toString().contains('SocketException') ||
             e.toString().contains('Connection reset') ||
             e.toString().contains('Failed host lookup') ||
+            e.toString().contains('connection abort') ||
             e.toString().contains('Network is unreachable');
         if (e is GithubUnauthorizedException || !isNetworkGlitch || attempt == maxAttempts) {
           LogService.instance.error('Gọi API GitHub thất bại (lần $attempt/$maxAttempts): $e');
           rethrow;
         }
-        LogService.instance.warn('Lỗi mạng chập chờn, thử lại lần ${attempt + 1}/$maxAttempts: $e');
-        await Future.delayed(Duration(seconds: attempt));
+        final delaySeconds = attempt * 2 > 15 ? 15 : attempt * 2;
+        LogService.instance.warn('Lỗi mạng chập chờn, thử lại lần ${attempt + 1}/$maxAttempts sau ${delaySeconds}s: $e');
+        await Future.delayed(Duration(seconds: delaySeconds));
       }
     }
     throw Exception('Thất bại sau $maxAttempts lần thử');
@@ -503,6 +507,9 @@ class GithubService {
     String archiveDownloadUrl, {
     void Function(int received, int? total)? onProgress,
   }) async {
+    // File artifact có thể khá lớn (vài chục MB) và hay bị tải đúng lúc app chuyển
+    // xuống nền - cho thử lại nhiều lần hơn + chờ lâu hơn giữa các lần thử so với
+    // các API call nhỏ khác, để có đủ thời gian cho mạng phục hồi.
     return _withRetry(() async {
       final request = http.Request('GET', Uri.parse(archiveDownloadUrl));
       request.headers.addAll(_headers);
@@ -541,7 +548,7 @@ class GithubService {
       }
 
       return bytes;
-    });
+    }, maxAttempts: 8);
   }
 
   /// Cập nhật nội dung 1 file và commit thẳng lên GitHub.

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'log_service.dart';
+import 'keep_alive_service.dart';
 
 class DownloadTask {
   final String id;
@@ -38,6 +39,10 @@ class DownloadManager extends ChangeNotifier {
   void _finish(String id) {
     _tasks.removeWhere((t) => t.id == id);
     notifyListeners();
+    if (_tasks.isEmpty) {
+      // Hết tác vụ tải -> không cần giữ app "sống cưỡng bức" nữa.
+      KeepAliveService.instance.stopKeepAliveIfIdle();
+    }
   }
 
   /// Chạy 1 tác vụ tải ở chế độ "chạy nền" (fire-and-forget): hàm gọi không
@@ -56,6 +61,9 @@ class DownloadManager extends ChangeNotifier {
     final id = '${DateTime.now().microsecondsSinceEpoch}';
     _start(id, label);
     LogService.instance.info('Bắt đầu tải: $label');
+    // Hiện thông báo "đang tải" để Android không giết tiến trình app nếu người
+    // dùng thoát/ẩn app giữa lúc đang tải (xem KeepAliveService).
+    KeepAliveService.instance.startKeepAlive(label: label);
 
     () async {
       try {

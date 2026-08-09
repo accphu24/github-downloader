@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'services/auth_service.dart';
 import 'services/app_settings.dart';
 import 'services/music_service.dart';
 import 'services/log_service.dart';
+import 'services/keep_alive_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/repo_list_screen.dart';
 import 'screens/lock_screen.dart';
@@ -13,6 +15,9 @@ import 'widgets/global_download_indicator.dart';
 final navigatorKey = GlobalKey<NavigatorState>();
 
 void main() {
+  // Bắt buộc gọi trước runApp() để flutter_foreground_task có thể giao tiếp
+  // giữa isolate của foreground service và app chính.
+  FlutterForegroundTask.initCommunicationPort();
   runApp(const MyApp());
 }
 
@@ -39,6 +44,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
   Future<void> _bootstrap() async {
     await AppSettings.instance.load();
+    KeepAliveService.instance.init();
     LogService.instance.info('App khởi động');
     if (AppSettings.instance.musicEnabled && AppSettings.instance.musicUrl.isNotEmpty) {
       await MusicService.instance.play(AppSettings.instance.musicUrl, volume: AppSettings.instance.musicVolume);

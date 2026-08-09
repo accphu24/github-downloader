@@ -1,6 +1,7 @@
 package com.tuytam.github_downloader
 
 import android.content.ContentValues
+import android.content.Context
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -14,6 +15,16 @@ import java.io.File
 // (khoá vân tay/khuôn mặt) yêu cầu FragmentActivity để hiện hộp thoại xác thực.
 class MainActivity : FlutterFragmentActivity() {
     private val CHANNEL = "github_downloader/downloads"
+
+    // Dùng engine dùng chung (xem PersistentEngine.kt) thay vì để Activity tự tạo/huỷ engine
+    // theo vòng đời của nó - nhờ vậy tác vụ tải file (Future đang chạy dở trong Dart) không
+    // bị giết khi người dùng đóng/vuốt app khỏi Recent Apps giữa lúc đang tải.
+    override fun provideFlutterEngine(context: Context): FlutterEngine {
+        return PersistentEngine.getOrCreate(context)
+    }
+
+    // false = engine này không bị huỷ khi Activity bị đóng.
+    override fun shouldDestroyEngineWithHost(): Boolean = false
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)

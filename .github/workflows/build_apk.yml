@@ -26,6 +26,7 @@ jobs:
         run: |
           mkdir -p android/app/src/main/kotlin/com/tuytam/github_downloader
           cp android_custom/MainActivity.kt android/app/src/main/kotlin/com/tuytam/github_downloader/MainActivity.kt
+          cp android_custom/PersistentEngine.kt android/app/src/main/kotlin/com/tuytam/github_downloader/PersistentEngine.kt
 
       - name: Thêm CallbackActivity cho OAuth vào AndroidManifest.xml
         run: |
@@ -70,6 +71,35 @@ jobs:
                   '<uses-permission android:name="android.permission.USE_BIOMETRIC" />\n    <application',
                   1,
               )
+
+          # Thêm quyền + service cho foreground service (giữ app không bị hệ thống giết
+          # tiến trình khi người dùng thoát/ẩn app lúc đang tải file) - dùng bởi
+          # flutter_foreground_task, xem lib/services/keep_alive_service.dart
+          if 'name="android.permission.FOREGROUND_SERVICE"' not in content:
+              content = content.replace(
+                  "<application",
+                  '<uses-permission android:name="android.permission.FOREGROUND_SERVICE" />\n    <application',
+                  1,
+              )
+          if 'FOREGROUND_SERVICE_DATA_SYNC' not in content:
+              content = content.replace(
+                  "<application",
+                  '<uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />\n    <application',
+                  1,
+              )
+          if 'POST_NOTIFICATIONS' not in content:
+              content = content.replace(
+                  "<application",
+                  '<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n    <application',
+                  1,
+              )
+          if 'pravera.flutter_foreground_task.service.ForegroundService' not in content:
+              service_xml = '''        <service
+                  android:name="com.pravera.flutter_foreground_task.service.ForegroundService"
+                  android:foregroundServiceType="dataSync"
+                  android:exported="false" />
+          '''
+              content = content.replace("</application>", service_xml + "    </application>")
 
           # Thêm taskAffinity="" cho MainActivity để tránh lỗi quay vòng khi redirect từ trình duyệt
           if 'android:name=".MainActivity"' in content and 'taskAffinity' not in content.split('android:name=".MainActivity"')[1].split('>')[0]:
