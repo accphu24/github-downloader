@@ -9,7 +9,17 @@ void showTopNotification(
   IconData icon = Icons.check_circle_rounded,
   Duration duration = const Duration(seconds: 3),
 }) {
-  final overlay = Overlay.of(context);
+  // Không dùng Overlay.of(context) trực tiếp: khi context truyền vào là
+  // navigatorKey.currentContext (context của chính Navigator, dùng để báo
+  // "tải xong" từ DownloadManager), Overlay do Navigator tạo ra nằm ở DƯỚI
+  // nó trong cây widget chứ không phải tổ tiên, nên Overlay.of() tìm ngược
+  // lên sẽ không thấy -> trả null -> release build crash "Null check
+  // operator used on a null value" (assert báo lỗi rõ ràng bị lược bỏ ở
+  // debug). Navigator.of(context).overlay lấy đúng overlay của navigator
+  // trong cả 2 trường hợp (context là chính Navigator, hoặc context bình
+  // thường của 1 màn hình con).
+  final overlay = Navigator.of(context).overlay;
+  if (overlay == null) return; // Navigator chưa sẵn sàng - bỏ qua, không crash
   final scheme = Theme.of(context).colorScheme;
   late OverlayEntry entry;
 
