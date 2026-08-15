@@ -6,6 +6,7 @@ import '../l10n/strings.dart';
 import 'browser_screen.dart';
 import 'login_screen.dart';
 import 'settings_screen.dart';
+import 'notifications_screen.dart';
 
 /// Cache đơn giản trong bộ nhớ, tồn tại trong suốt phiên chạy app.
 class _RepoCache {
@@ -30,6 +31,7 @@ class _RepoListScreenState extends State<RepoListScreen> {
   bool _loading = true;
   String? _error;
   String? _username;
+  int _unreadCount = 0;
 
   @override
   void initState() {
@@ -50,6 +52,7 @@ class _RepoListScreenState extends State<RepoListScreen> {
     _githubService = GithubService(token: token);
     _username = username;
     _pinned = await _pinnedService.getPinned();
+    _loadUnreadCount(); // chạy ngầm, không chặn danh sách repo hiện chính
 
     if (_RepoCache.repos != null) {
       setState(() {
@@ -144,6 +147,23 @@ class _RepoListScreenState extends State<RepoListScreen> {
     Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsScreen()));
   }
 
+  /// Chỉ dùng để hiện số badge trên icon chuông - lỗi ở đây (vd token cũ chưa
+  /// có scope 'notifications') bỏ qua âm thầm, màn Notifications sẽ tự báo lỗi
+  /// rõ ràng hơn khi user thực sự mở vào.
+  Future<void> _loadUnreadCount() async {
+    try {
+      final notifs = await _githubService!.listNotifications();
+      if (mounted) setState(() => _unreadCount = notifs.length);
+    } catch (_) {
+      // im lặng bỏ qua, không làm phiền màn hình chính
+    }
+  }
+
+  Future<void> _openNotifications() async {
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => NotificationsScreen(githubService: _githubService!)));
+    _loadUnreadCount(); // cập nhật lại badge sau khi quay về (có thể vừa đọc/đánh dấu bớt)
+  }
+
   Color _permissionColor(BuildContext context, GithubRepo repo) {
     final scheme = Theme.of(context).colorScheme;
     if (repo.canAdmin) return scheme.primary;
@@ -167,6 +187,11 @@ class _RepoListScreenState extends State<RepoListScreen> {
       appBar: AppBar(
         title: Text(_username != null ? t('repolist.title_named', {'username': _username!}) : t('repolist.title_generic')),
         actions: [
+          Badge(
+            label: Text('$_unreadCount'),
+            isLabelVisible: _unreadCount > 0,
+            child: IconButton(icon: const Icon(Icons.notifications_rounded), tooltip: t('notif.tooltip'), onPressed: _openNotifications),
+          ),
           IconButton(icon: const Icon(Icons.edit_rounded), tooltip: t('repolist.manual_entry_tooltip'), onPressed: _openManualEntry),
           IconButton(icon: const Icon(Icons.refresh_rounded), onPressed: () => _loadRepos()),
           IconButton(icon: const Icon(Icons.settings_rounded), tooltip: t('repolist.settings_tooltip'), onPressed: _openSettings),

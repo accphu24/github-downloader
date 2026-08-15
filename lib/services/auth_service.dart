@@ -22,7 +22,7 @@ class AuthService {
     final authUrl = Uri.https('github.com', '/login/oauth/authorize', {
       'client_id': clientId,
       'redirect_uri': redirectUri,
-      'scope': 'repo user:email',
+      'scope': 'repo user:email notifications',
     });
 
     try {

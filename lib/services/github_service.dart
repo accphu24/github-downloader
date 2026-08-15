@@ -99,6 +99,68 @@ class GithubRepo {
   }
 }
 
+/// 1 thông báo từ GitHub (mention, review request, CI cập nhật, v.v).
+class GithubNotification {
+  final String id;
+  final String repoFullName;
+  final String subjectTitle;
+  final String subjectType; // Issue, PullRequest, Commit, Release, Discussion, CheckSuite...
+  final String reason;
+  bool unread; // không final: UI tự cập nhật cục bộ ngay khi đánh dấu đã đọc, khỏi phải gọi lại API để refresh
+  final DateTime updatedAt;
+  final String? subjectApiUrl;
+
+  GithubNotification({
+    required this.id,
+    required this.repoFullName,
+    required this.subjectTitle,
+    required this.subjectType,
+    required this.reason,
+    required this.unread,
+    required this.updatedAt,
+    this.subjectApiUrl,
+  });
+
+  factory GithubNotification.fromJson(Map<String, dynamic> json) {
+    final subject = json['subject'] ?? {};
+    final repo = json['repository'] ?? {};
+    return GithubNotification(
+      id: json['id'] ?? '',
+      repoFullName: repo['full_name'] ?? '',
+      subjectTitle: subject['title'] ?? '',
+      subjectType: subject['type'] ?? '',
+      reason: json['reason'] ?? '',
+      unread: json['unread'] ?? false,
+      updatedAt: DateTime.parse(json['updated_at']),
+      subjectApiUrl: subject['url'],
+    );
+  }
+
+  /// GitHub không trả sẵn html_url cho subject của notification, chỉ có url API
+  /// (api.github.com/repos/...). Tự chuyển sang url trang web (github.com/...)
+  /// để mở bằng trình duyệt. Lưu ý PR và Commit có đường dẫn web khác số ít/nhiều
+  /// so với url API (pulls -> pull, commits -> commit).
+  String get webUrl {
+    final apiUrl = subjectApiUrl;
+    if (apiUrl == null || apiUrl.isEmpty) {
+      return 'https://github.com/$repoFullName';
+    }
+    final base = apiUrl.replaceFirst('https://api.github.com/repos/', 'https://github.com/');
+    switch (subjectType) {
+      case 'PullRequest':
+        return base.replaceFirst('/pulls/', '/pull/');
+      case 'Commit':
+        return base.replaceFirst('/commits/', '/commit/');
+      case 'Release':
+        return 'https://github.com/$repoFullName/releases';
+      case 'Discussion':
+        return 'https://github.com/$repoFullName/discussions';
+      default:
+        return base;
+    }
+  }
+}
+
 /// Phần mở rộng cho các loại file xem trước được dạng text.
 const _previewableExtensions = {
   'txt', 'md', 'json', 'yaml', 'yml', 'dart', 'py', 'js', 'ts', 'jsx', 'tsx',
@@ -600,5 +662,37 @@ class GithubService {
       throw Exception('Đã tồn tại file tại đường dẫn này. Đổi tên khác hoặc dùng tính năng sửa file để ghi đè.');
     }
     _checkStatus(response, 'Tải file lên thất bại');
+  }
+
+  /// Lấy danh sách thông báo. [all]=false chỉ trả về thông báo CHƯA ĐỌC (mặc định
+  /// của GitHub), [all]=true trả về cả thông báo đã đọc gần đây.
+  /// Cần token có scope 'notifications' - nếu token cũ chưa có scope này, GitHub
+  /// trả 404 dù endpoint tồn tại, nên coi 404 ở đây là lỗi thiếu quyền chứ không
+  /// phải "không tìm thấy" thông thường.
+  Future<List<GithubNotification>> listNotifications({bool all = false}) async {
+    return _withRetry(() async {
+      final url = Uri.https('api.github.com', '/notifications', {'all': all.toString(), 'per_page': '50'});
+      final response = await http.get(url, headers: _headers);
+      if (response.statusCode == 404) {
+        throw Exception('Không lấy được thông báo (404). Tài khoản có thể cần đăng nhập lại để cấp thêm quyền đọc thông báo.');
+      }
+      _checkStatus(response, 'Không lấy được thông báo');
+      final List data = jsonDecode(response.body);
+      return data.map((e) => GithubNotification.fromJson(e)).toList();
+    });
+  }
+
+  /// Đánh dấu 1 thông báo là đã đọc.
+  Future<void> markNotificationRead(String threadId) async {
+    final url = Uri.https('api.github.com', '/notifications/threads/$threadId');
+    final response = await http.patch(url, headers: _headers);
+    _checkStatus(response, 'Không đánh dấu đã đọc được');
+  }
+
+  /// Đánh dấu TOÀN BỘ thông báo là đã đọc.
+  Future<void> markAllNotificationsRead() async {
+    final url = Uri.https('api.github.com', '/notifications');
+    final response = await http.put(url, headers: {..._headers, 'Content-Type': 'application/json'}, body: jsonEncode({}));
+    _checkStatus(response, 'Không đánh dấu tất cả đã đọc được');
   }
 }
