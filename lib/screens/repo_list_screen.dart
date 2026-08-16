@@ -7,6 +7,7 @@ import 'browser_screen.dart';
 import 'login_screen.dart';
 import 'settings_screen.dart';
 import 'notifications_screen.dart';
+import '../services/ci_watch_service.dart';
 
 /// Cache đơn giản trong bộ nhớ, tồn tại trong suốt phiên chạy app.
 class _RepoCache {
@@ -87,6 +88,7 @@ class _RepoListScreenState extends State<RepoListScreen> {
       _pinned = updated;
       _applyFilter();
     });
+    CiWatchService.instance.syncWatchedReposIfEnabled(); // repo ghim đổi -> cập nhật luôn danh sách đang theo dõi CI (nếu đang bật)
   }
 
   Future<void> _loadRepos({bool silent = false}) async {

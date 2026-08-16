@@ -6,6 +6,7 @@ import '../services/music_service.dart';
 import '../services/pinned_repos_service.dart';
 import '../services/downloads_service.dart';
 import '../services/log_service.dart';
+import '../services/ci_watch_service.dart';
 import '../l10n/strings.dart';
 import '../widgets/top_notification.dart';
 
@@ -19,11 +20,15 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   late final TextEditingController _musicUrlController;
   final _pinnedService = PinnedReposService();
+  int _pinnedCount = 0;
 
   @override
   void initState() {
     super.initState();
     _musicUrlController = TextEditingController(text: AppSettings.instance.musicUrl);
+    _pinnedService.getPinned().then((p) {
+      if (mounted) setState(() => _pinnedCount = p.length);
+    });
   }
 
   @override
@@ -91,6 +96,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void _clearLog() {
     LogService.instance.clear();
     showTopNotification(context, t('settings.log_cleared'));
+  }
+
+  Future<void> _toggleCiWatch(bool value) async {
+    if (!value) {
+      await CiWatchService.instance.disable();
+      return;
+    }
+    final ok = await CiWatchService.instance.enable();
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t('settings.ci_watch_no_pins'))));
+    }
   }
 
   @override
@@ -272,6 +288,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   secondary: const Icon(Icons.fingerprint_rounded),
                   value: settings.biometricLockEnabled,
                   onChanged: (v) => settings.setBiometricLockEnabled(v),
+                ),
+              ),
+              const SizedBox(height: 24),
+              _sectionTitle(context, t('settings.section_ci_watch')),
+              const SizedBox(height: 8),
+              Card(
+                color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(t('settings.ci_watch_enable')),
+                        secondary: const Icon(Icons.notifications_active_rounded),
+                        value: settings.ciWatchEnabled,
+                        onChanged: _toggleCiWatch,
+                      ),
+                      Text(
+                        _pinnedCount > 0 ? t('settings.ci_watch_hint', {'count': '$_pinnedCount'}) : t('settings.ci_watch_no_pins'),
+                        style: TextStyle(fontSize: 12, color: scheme.outline),
+                      ),
+                    ],
+                  ),
                 ),
               ),
               const SizedBox(height: 24),

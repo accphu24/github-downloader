@@ -21,6 +21,10 @@ class AppSettings extends ChangeNotifier {
 
   bool biometricLockEnabled = false;
 
+  /// Bật tính năng theo dõi CI/CD nền: định kỳ kiểm tra các repo đã ghim (pin),
+  /// báo qua thông báo hệ thống khi 1 lần chạy Actions vừa hoàn thành.
+  bool ciWatchEnabled = false;
+
   /// Bật/tắt lưu log chi tiết (dùng cho debug). Khi bật, app sẽ tự động tải
   /// file log về máy (thư mục Download) mỗi khi bị đóng/ẩn xuống nền.
   bool detailedLogEnabled = false;
@@ -37,6 +41,7 @@ class AppSettings extends ChangeNotifier {
   static const _kMusicVolume = 'settings_music_volume';
   static const _kBiometricLock = 'settings_biometric_lock';
   static const _kDetailedLog = 'settings_detailed_log';
+  static const _kCiWatch = 'settings_ci_watch_enabled';
 
   /// Danh sách màu chủ đạo cho người dùng chọn.
   static const presetColors = <Color>[
@@ -78,6 +83,9 @@ class AppSettings extends ChangeNotifier {
 
       final dl = await _storage.read(key: _kDetailedLog);
       if (dl != null) detailedLogEnabled = dl == 'true';
+
+      final cw = await _storage.read(key: _kCiWatch);
+      if (cw != null) ciWatchEnabled = cw == 'true';
     } catch (_) {
       // Nếu đọc lỗi thì dùng giá trị mặc định, không chặn khởi động app.
     }
@@ -136,6 +144,14 @@ class AppSettings extends ChangeNotifier {
   Future<void> setDetailedLogEnabled(bool value) async {
     detailedLogEnabled = value;
     await _storage.write(key: _kDetailedLog, value: value.toString());
+    notifyListeners();
+  }
+
+  /// Chỉ lưu lại cờ bật/tắt - việc khởi động/dừng service theo dõi CI thực sự
+  /// do CiWatchService đảm nhiệm (cần thêm token + danh sách repo, không chỉ 1 cờ).
+  Future<void> setCiWatchEnabled(bool value) async {
+    ciWatchEnabled = value;
+    await _storage.write(key: _kCiWatch, value: value.toString());
     notifyListeners();
   }
 

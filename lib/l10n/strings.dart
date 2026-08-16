@@ -171,6 +171,12 @@ const _vi = <String, String>{
   'settings.language_vi': 'Tiếng Việt',
   'settings.language_en': 'English',
 
+  // Theo dõi CI/CD
+  'settings.section_ci_watch': 'Theo dõi CI/CD',
+  'settings.ci_watch_enable': 'Thông báo khi build xong',
+  'settings.ci_watch_hint': 'Đang theo dõi {count} repo đã ghim. Ghim/bỏ ghim thêm ở màn danh sách repo.',
+  'settings.ci_watch_no_pins': 'Ghim ít nhất 1 repo ở màn danh sách repo để dùng tính năng này.',
+
   // Thông báo
   'notif.title': 'Thông báo',
   'notif.tooltip': 'Thông báo',
@@ -350,6 +356,12 @@ const _en = <String, String>{
   'settings.section_language': 'Language',
   'settings.language_vi': 'Tiếng Việt',
   'settings.language_en': 'English',
+
+  // CI/CD watch
+  'settings.section_ci_watch': 'CI/CD watch',
+  'settings.ci_watch_enable': 'Notify when build finishes',
+  'settings.ci_watch_hint': 'Watching {count} pinned repos. Pin/unpin more on the repo list screen.',
+  'settings.ci_watch_no_pins': 'Pin at least 1 repo on the repo list screen to use this.',
 
   // Notifications
   'notif.title': 'Notifications',

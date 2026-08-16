@@ -5,6 +5,7 @@ import 'services/app_settings.dart';
 import 'services/music_service.dart';
 import 'services/log_service.dart';
 import 'services/keep_alive_service.dart';
+import 'services/ci_watch_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/repo_list_screen.dart';
 import 'screens/lock_screen.dart';
@@ -48,6 +49,12 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     LogService.instance.info('App khởi động');
     if (AppSettings.instance.musicEnabled && AppSettings.instance.musicUrl.isNotEmpty) {
       await MusicService.instance.play(AppSettings.instance.musicUrl, volume: AppSettings.instance.musicVolume);
+    }
+    if (AppSettings.instance.ciWatchEnabled) {
+      // App vừa mở lại sau khi bị hệ thống/người dùng đóng hẳn - foreground
+      // service theo dõi CI trước đó có thể đã bị dừng theo, nên khởi động lại
+      // (enable() tự bỏ qua an toàn nếu chưa đăng nhập hoặc chưa ghim repo nào).
+      CiWatchService.instance.enable();
     }
   }
 
