@@ -22,6 +22,17 @@ jobs:
             cp -r /tmp/scaffold/android ./android
           fi
 
+      # Tương thích AGP 9+: Flutter thường tự thêm 2 dòng này vào gradle.properties
+      # SAU lần build đầu bị lỗi, nhưng CI luôn là checkout sạch nên không bao giờ có
+      # "lần 2" để tự sửa - phải chủ động thêm trước khi build.
+      # Xem flutter/flutter#175688 và docs.flutter.dev/release/breaking-changes/migrate-to-built-in-kotlin
+      - name: Tương thích AGP 9+ (newDsl/builtInKotlin)
+        run: |
+          {
+            echo "android.newDsl=false"
+            echo "android.builtInKotlin=false"
+          } >> android/gradle.properties
+
       - name: Ghi đè MainActivity.kt bằng bản tuỳ chỉnh (xử lý lưu file vào Downloads)
         run: |
           mkdir -p android/app/src/main/kotlin/com/tuytam/github_downloader
@@ -127,7 +138,7 @@ jobs:
         run: dart run flutter_launcher_icons
 
       - name: Build APK
-        run: flutter build apk --release
+        run: flutter build apk --release --android-skip-build-dependency-validation
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
