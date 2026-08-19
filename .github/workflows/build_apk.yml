@@ -112,50 +112,12 @@ jobs:
               f.write(content)
           EOF
 
-      - name: (Debug) In cấu hình Kotlin/AGP hiện tại
+      - name: Cập nhật phiên bản Kotlin (nếu cần, hỗ trợ cả 2 định dạng)
         run: |
-          echo "== android/settings.gradle.kts =="; cat android/settings.gradle.kts 2>/dev/null || echo "(không tồn tại)"
-          echo; echo "== android/settings.gradle =="; cat android/settings.gradle 2>/dev/null || echo "(không tồn tại)"
-          echo; echo "== android/gradle/libs.versions.toml =="; cat android/gradle/libs.versions.toml 2>/dev/null || echo "(không tồn tại)"
-
-      - name: Cập nhật phiên bản Kotlin (đảm bảo đạt mức tối thiểu Flutter yêu cầu)
-        run: |
-          # Flutter mới yêu cầu Kotlin Gradle Plugin >= 2.2.20 (xem lỗi:
-          # "Your project's Kotlin version (2.2.10) is lower than Flutter's
-          # minimum supported version of 2.2.20"). Trước đây bước này set CỨNG
-          # xuống 1.9.24 (để né lỗi ngược lại của các bản Flutter cũ hơn), nhưng
-          # giờ làm vậy sẽ khiến bản build càng thấp hơn mức tối thiểu và luôn fail.
-          # Nay đổi thành: nâng lên >= mức tối thiểu, đồng thời hỗ trợ cả 3 nơi mà
-          # bản Kotlin có thể được khai báo (project template của flutter create
-          # có thể thay đổi cách khai báo giữa các phiên bản Flutter).
-          KOTLIN_MIN="2.2.20"
-          updated=0
-
-          # 1) Gradle version catalog - định dạng mới, nhiều khả năng flutter create
-          #    bản hiện tại dùng cách này (id(...) trong settings.gradle.kts chỉ còn
-          #    "alias(libs.plugins.kotlin.android)", bản Kotlin thật nằm ở đây)
-          if [ -f android/gradle/libs.versions.toml ] && grep -qE '^[[:space:]]*kotlin[[:space:]]*=' android/gradle/libs.versions.toml; then
-            sed -i -E "s/^([[:space:]]*kotlin[[:space:]]*=[[:space:]]*)\"[^\"]*\"/\1\"$KOTLIN_MIN\"/" android/gradle/libs.versions.toml
-            updated=1
-            echo "Đã cập nhật Kotlin trong android/gradle/libs.versions.toml -> $KOTLIN_MIN"
-          fi
-
-          # 2) settings.gradle.kts - khai báo trực tiếp kiểu Kotlin DSL (định dạng cũ hơn)
-          if [ -f android/settings.gradle.kts ] && grep -qE 'id\("org\.jetbrains\.kotlin\.android"\)[[:space:]]*version' android/settings.gradle.kts; then
-            sed -i -E "s/(id\(\"org\.jetbrains\.kotlin\.android\"\)[[:space:]]*version[[:space:]]*)\"[^\"]*\"/\1\"$KOTLIN_MIN\"/" android/settings.gradle.kts
-            updated=1
-            echo "Đã cập nhật Kotlin trong android/settings.gradle.kts -> $KOTLIN_MIN"
-          fi
-
-          # 3) settings.gradle - khai báo trực tiếp kiểu Groovy DSL (định dạng cũ)
-          if [ -f android/settings.gradle ] && grep -qE 'id "org\.jetbrains\.kotlin\.android"[[:space:]]*version' android/settings.gradle; then
-            sed -i -E "s/(id \"org\.jetbrains\.kotlin\.android\"[[:space:]]*version[[:space:]]*)\"[^\"]*\"/\1\"$KOTLIN_MIN\"/" android/settings.gradle
-            updated=1
-            echo "Đã cập nhật Kotlin trong android/settings.gradle -> $KOTLIN_MIN"
-          fi
-
-          if [ "$updated" -eq 0 ]; then
-            echo "::warning::Không tìm thấy khai báo phiên bản Kotlin ở libs.versions.toml, settings.gradle hay settings.gradle.kts để cập nhật lên $KOTLIN_MIN. Template của flutter create có thể đã đổi định dạng - cần kiểm tra lại bước này."
+          if [ -f android/settings.gradle ]; then
+            sed -i 's/id "org.jetbrains.kotlin.android" version "[^"]*"/id "org.jetbrains.kotlin.android" version "1.9.24"/' android/settings.gradle
+          elif [ -f android/settings.gradle.kts ]; then
+            sed -i 's/id("org.jetbrains.kotlin.android") version "[^"]*"/id("org.jetbrains.kotlin.android") version "1.9.24"/' android/settings.gradle.kts
           fi
 
       - name: Cài dependencies
@@ -165,7 +127,7 @@ jobs:
         run: dart run flutter_launcher_icons
 
       - name: Build APK
-        run: flutter build apk --release --android-skip-build-dependency-validation
+        run: flutter build apk --release
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

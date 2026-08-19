@@ -119,13 +119,24 @@ class _AppTaskHandler extends TaskHandler {
 /// cần service chạy cùng lúc - dùng đếm tham chiếu qua [_activeReasons] để 1 lý
 /// do kết thúc (vd tải xong) không vô tình tắt luôn lý do khác đang cần service
 /// (vd đang theo dõi CI).
+class _ReasonInfo {
+  final String title;
+  final String text;
+  const _ReasonInfo(this.title, this.text);
+}
+
 class KeepAliveService {
   static final KeepAliveService instance = KeepAliveService._internal();
   KeepAliveService._internal();
 
   bool _initialized = false;
   bool _permissionChecked = false;
-  final Set<String> _activeReasons = {};
+  // Lưu cả title/text của từng lý do (không chỉ tên) để khi 1 lý do kết thúc mà
+  // lý do khác vẫn còn, có thể KHÔI PHỤC lại đúng nội dung thông báo của lý do
+  // còn lại - trước đây chỉ xoá khỏi Set nên nội dung cũ bị kẹt nguyên trên
+  // thông báo (vd tải file xong trong lúc đang theo dõi CI thì thông báo vẫn
+  // treo "Đang tải file" mãi vì không có bước ghi đè lại).
+  final Map<String, _ReasonInfo> _activeReasons = {};
 
   /// Gọi 1 lần lúc app khởi động.
   void init() {
@@ -170,7 +181,7 @@ class KeepAliveService {
     if (!Platform.isAndroid) return;
     try {
       await _ensurePermissions();
-      _activeReasons.add(reason);
+      _activeReasons[reason] = _ReasonInfo(title, text);
       if (await FlutterForegroundTask.isRunningService) {
         await FlutterForegroundTask.updateService(notificationTitle: title, notificationText: text);
       } else {
@@ -190,13 +201,23 @@ class KeepAliveService {
   Future<void> _stopReason(String reason) async {
     if (!Platform.isAndroid) return;
     _activeReasons.remove(reason);
-    if (_activeReasons.isNotEmpty) return; // còn lý do khác đang cần service - giữ nguyên
-    try {
-      if (await FlutterForegroundTask.isRunningService) {
-        await FlutterForegroundTask.stopService();
+    if (_activeReasons.isEmpty) {
+      try {
+        if (await FlutterForegroundTask.isRunningService) {
+          await FlutterForegroundTask.stopService();
+        }
+      } catch (e) {
+        LogService.instance.warn('Không tắt được service nền: $e');
       }
+      return;
+    }
+    // Vẫn còn lý do khác cần service chạy tiếp - khôi phục lại nội dung thông
+    // báo của lý do đó, tránh để nguyên nội dung cũ của lý do vừa kết thúc.
+    try {
+      final remaining = _activeReasons.values.last;
+      await FlutterForegroundTask.updateService(notificationTitle: remaining.title, notificationText: remaining.text);
     } catch (e) {
-      LogService.instance.warn('Không tắt được service nền: $e');
+      LogService.instance.warn('Không cập nhật lại thông báo nền: $e');
     }
   }
 
