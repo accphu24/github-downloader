@@ -7,7 +7,7 @@ import 'log_service.dart';
 class AuthService {
   static const String clientId = 'Ov23ct4O7d9Fv0KW1kC8';
 
-  static const String backendUrl = 'https://web-production-0522b.up.railway.app';
+  static const String backendUrl = 'https://oauth-backend-tnwn.onrender.com';
 
   static const String callbackScheme = 'githubdownloader';
   static const String redirectUri = '$callbackScheme://callback';
