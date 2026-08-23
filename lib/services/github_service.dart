@@ -388,9 +388,10 @@ class GithubService {
 
   /// Liệt kê file/thư mục trong repo tại 1 path cụ thể.
   /// Repo public không cần token, repo private cần token có scope 'repo'.
-  Future<List<GithubFile>> listContents(String owner, String repo, {String path = ''}) async {
+  Future<List<GithubFile>> listContents(String owner, String repo, {String path = '', String? ref}) async {
     return _withRetry(() async {
-      final url = Uri.https('api.github.com', '/repos/$owner/$repo/contents/$path');
+      final query = ref != null ? <String, String>{'ref': ref} : null;
+      final url = Uri.https('api.github.com', '/repos/$owner/$repo/contents/$path', query);
       final response = await http.get(url, headers: _headers);
       _checkStatus(response, 'Không lấy được nội dung repo. Repo có thể là private, không tồn tại, hoặc token không đủ quyền.');
 
@@ -401,9 +402,10 @@ class GithubService {
 
   /// Lấy thông tin (bao gồm download_url) của đúng 1 file, dùng khi chỉ có path
   /// (ví dụ từ kết quả tìm kiếm toàn repo, chưa có sẵn download_url).
-  Future<GithubFile> getFileMeta(String owner, String repo, String path) async {
+  Future<GithubFile> getFileMeta(String owner, String repo, String path, {String? ref}) async {
     return _withRetry(() async {
-      final url = Uri.https('api.github.com', '/repos/$owner/$repo/contents/$path');
+      final query = ref != null ? <String, String>{'ref': ref} : null;
+      final url = Uri.https('api.github.com', '/repos/$owner/$repo/contents/$path', query);
       final response = await http.get(url, headers: _headers);
       _checkStatus(response, 'Không lấy được thông tin file');
       return GithubFile.fromJson(jsonDecode(response.body));
@@ -419,12 +421,23 @@ class GithubService {
     return data['default_branch'] ?? 'main';
   }
 
+  /// Lấy danh sách tên các branch của repo.
+  Future<List<String>> listBranches(String owner, String repo) async {
+    return _withRetry(() async {
+      final url = Uri.https('api.github.com', '/repos/$owner/$repo/branches', {'per_page': '100'});
+      final response = await http.get(url, headers: _headers);
+      _checkStatus(response, 'Không lấy được danh sách branch');
+      final List data = jsonDecode(response.body);
+      return data.map((e) => e['name'] as String).toList();
+    });
+  }
+
   /// Tìm kiếm file theo tên/đường dẫn trong TOÀN BỘ repo (mọi thư mục con),
   /// dùng Git Trees API (1 request lấy hết cây thư mục, nhanh hơn nhiều so với
-  /// duyệt đệ quy từng thư mục).
-  Future<List<GithubFile>> searchFilesInRepo(String owner, String repo, String query) async {
+  /// duyệt đệ quy từng thư mục). [ref] mặc định là default branch nếu không truyền.
+  Future<List<GithubFile>> searchFilesInRepo(String owner, String repo, String query, {String? ref}) async {
     return _withRetry(() async {
-      final branch = await getDefaultBranch(owner, repo);
+      final branch = ref ?? await getDefaultBranch(owner, repo);
       final url = Uri.https('api.github.com', '/repos/$owner/$repo/git/trees/$branch', {'recursive': '1'});
       final response = await http.get(url, headers: _headers);
       _checkStatus(response, 'Không tìm kiếm được trong repo');
@@ -451,12 +464,12 @@ class GithubService {
   /// Duyệt đệ quy toàn bộ file bên trong 1 thư mục (bao gồm thư mục con).
   /// Public để UI có thể gọi trước nhằm đếm số lượng file (cảnh báo nếu quá nhiều)
   /// trước khi thực sự tải xuống.
-  Future<List<GithubFile>> listAllFilesRecursive(String owner, String repo, String path) async {
-    final entries = await listContents(owner, repo, path: path);
+  Future<List<GithubFile>> listAllFilesRecursive(String owner, String repo, String path, {String? ref}) async {
+    final entries = await listContents(owner, repo, path: path, ref: ref);
     final result = <GithubFile>[];
     for (final entry in entries) {
       if (entry.type == 'dir') {
-        result.addAll(await listAllFilesRecursive(owner, repo, entry.path));
+        result.addAll(await listAllFilesRecursive(owner, repo, entry.path, ref: ref));
       } else {
         result.add(entry);
       }
@@ -623,6 +636,7 @@ class GithubService {
     String newContent,
     String sha, {
     String? commitMessage,
+    String? branch,
   }) async {
     final url = Uri.https('api.github.com', '/repos/$owner/$repo/contents/$path');
     final response = await http.put(
@@ -632,6 +646,7 @@ class GithubService {
         'message': commitMessage ?? 'Update $path via GitHub Repo Downloader',
         'content': base64Encode(utf8.encode(newContent)),
         'sha': sha,
+        if (branch != null) 'branch': branch,
       }),
     );
     if (response.statusCode == 409) {
@@ -648,6 +663,7 @@ class GithubService {
     String path,
     List<int> bytes, {
     String? commitMessage,
+    String? branch,
   }) async {
     final url = Uri.https('api.github.com', '/repos/$owner/$repo/contents/$path');
     final response = await http.put(
@@ -656,6 +672,7 @@ class GithubService {
       body: jsonEncode({
         'message': commitMessage ?? 'Add $path via GitHub Repo Downloader',
         'content': base64Encode(bytes),
+        if (branch != null) 'branch': branch,
       }),
     );
     if (response.statusCode == 422) {

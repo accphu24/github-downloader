@@ -4,6 +4,7 @@ import '../services/github_service.dart';
 import '../services/downloads_service.dart';
 import '../l10n/strings.dart';
 import 'top_notification.dart';
+import 'diff_preview_sheet.dart';
 
 /// Bottom sheet xem và sửa nội dung 1 file text, có thể lưu (commit) thẳng lên GitHub.
 /// Trả về true qua Navigator nếu đã lưu thành công (để màn hình cha có thể tự làm mới).
@@ -13,6 +14,7 @@ class FileEditorSheet extends StatefulWidget {
   final GithubFile file;
   final GithubService githubService;
   final bool canEdit;
+  final String? branch;
 
   const FileEditorSheet({
     super.key,
@@ -21,6 +23,7 @@ class FileEditorSheet extends StatefulWidget {
     required this.file,
     required this.githubService,
     required this.canEdit,
+    this.branch,
   });
 
   static Future<bool?> show(
@@ -30,6 +33,7 @@ class FileEditorSheet extends StatefulWidget {
     required GithubFile file,
     required GithubService githubService,
     required bool canEdit,
+    String? branch,
   }) {
     return showModalBottomSheet<bool>(
       context: context,
@@ -41,6 +45,7 @@ class FileEditorSheet extends StatefulWidget {
         file: file,
         githubService: githubService,
         canEdit: canEdit,
+        branch: branch,
       ),
     );
   }
@@ -77,7 +82,7 @@ class _FileEditorSheetState extends State<FileEditorSheet> {
       _error = null;
     });
     try {
-      final meta = await widget.githubService.getFileMeta(widget.owner, widget.repo, widget.file.path);
+      final meta = await widget.githubService.getFileMeta(widget.owner, widget.repo, widget.file.path, ref: widget.branch);
       _currentSha = meta.sha;
       final bytes = await widget.githubService.downloadFile(meta.downloadUrl!);
       _originalContent = utf8.decode(bytes);
@@ -98,32 +103,16 @@ class _FileEditorSheetState extends State<FileEditorSheet> {
 
   Future<void> _saveToGithub() async {
     if (_currentSha == null) return;
-    final messageController = TextEditingController(text: 'Update ${widget.file.name} via GitHub Repo Downloader');
+    final defaultMessage = 'Update ${widget.file.name} via GitHub Repo Downloader';
 
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text(t('editor.commit_confirm_title')),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text('File: ${widget.file.path}', style: const TextStyle(fontSize: 13)),
-            const SizedBox(height: 12),
-            TextField(
-              controller: messageController,
-              decoration: InputDecoration(labelText: t('editor.commit_message_label'), border: const OutlineInputBorder()),
-              maxLines: 2,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(t('common.cancel'))),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text('Commit')),
-        ],
-      ),
+    final commitMessage = await DiffPreviewSheet.show(
+      context,
+      fileName: widget.file.name,
+      oldContent: _originalContent,
+      newContent: _controller.text,
+      initialCommitMessage: defaultMessage,
     );
-    if (confirmed != true || !mounted) return;
+    if (commitMessage == null || !mounted) return;
 
     setState(() => _saving = true);
     try {
@@ -133,7 +122,8 @@ class _FileEditorSheetState extends State<FileEditorSheet> {
         widget.file.path,
         _controller.text,
         _currentSha!,
-        commitMessage: messageController.text.trim(),
+        commitMessage: commitMessage.isEmpty ? defaultMessage : commitMessage,
+        branch: widget.branch,
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t('editor.commit_success'))));

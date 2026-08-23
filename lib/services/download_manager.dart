@@ -61,11 +61,13 @@ class DownloadManager extends ChangeNotifier {
     final id = '${DateTime.now().microsecondsSinceEpoch}';
     _start(id, label);
     LogService.instance.info('Bắt đầu tải: $label');
-    // Hiện thông báo "đang tải" để Android không giết tiến trình app nếu người
-    // dùng thoát/ẩn app giữa lúc đang tải (xem KeepAliveService).
-    KeepAliveService.instance.startKeepAlive(label: label);
 
     () async {
+      // Đợi service nền khởi động XONG rồi mới thực sự bắt đầu tải. Nếu không
+      // đợi: file nhỏ/mạng nhanh có thể tải xong (và gọi lệnh dừng service)
+      // trước khi lệnh khởi động service ở trên hoàn tất, khiến thông báo bị
+      // kẹt mãi ở nội dung "đang tải" (xem KeepAliveService).
+      await KeepAliveService.instance.startKeepAlive(label: label);
       try {
         final bytes = await fetch((p) => _updateProgress(id, p));
         final savedPath = await save(bytes);

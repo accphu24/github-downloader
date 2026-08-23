@@ -63,6 +63,10 @@ class _BrowserScreenState extends State<BrowserScreen> {
   bool _loading = false;
   String? _username;
 
+  String? _currentBranch; // null = đang dùng default branch của repo
+  List<String> _branches = [];
+  bool _branchesLoading = false;
+
   bool _searching = false;
   List<GithubFile> _searchResults = [];
   bool _searchLoading = false;
@@ -115,8 +119,10 @@ class _BrowserScreenState extends State<BrowserScreen> {
     }
   }
 
-  Future<void> _loadRepo() async {
-    if (_ownerController.text.isEmpty || _repoController.text.isEmpty) return;
+  /// Tải lại nội dung THƯ MỤC GỐC của repo hiện tại, theo _currentBranch đang có.
+  /// Không đụng tới _currentBranch - dùng khi mở repo mới (branch đã set trước
+  /// khi gọi) hoặc khi đổi branch qua _openBranchSwitcher.
+  Future<void> _loadRootContents() async {
     setState(() {
       _loading = true;
       _currentPath = '';
@@ -125,9 +131,81 @@ class _BrowserScreenState extends State<BrowserScreen> {
     final files = await _guard(() => _githubService!.listContents(
           _ownerController.text.trim(),
           _repoController.text.trim(),
+          ref: _currentBranch,
         ));
     if (files != null) setState(() => _files = files);
     setState(() => _loading = false);
+  }
+
+  Future<void> _loadRepo() async {
+    if (_ownerController.text.isEmpty || _repoController.text.isEmpty) return;
+    setState(() {
+      _currentBranch = null; // mở repo mới (khác trước đó) - quay về default branch
+      _branches = [];
+    });
+    await _loadRootContents();
+    if (!mounted) return;
+    // Lấy tên default branch để HIỂN THỊ cho người dùng biết đang xem branch nào
+    // (không chặn UI nếu lỗi - repo vẫn duyệt được bình thường, chỉ là không hiện tên).
+    try {
+      final branch = await _githubService!.getDefaultBranch(_ownerController.text.trim(), _repoController.text.trim());
+      if (mounted) setState(() => _currentBranch = branch);
+    } catch (_) {}
+  }
+
+  /// Hiện bottom sheet chọn branch, load lazy danh sách branch nếu chưa có.
+  Future<void> _openBranchSwitcher() async {
+    final owner = _ownerController.text.trim();
+    final repo = _repoController.text.trim();
+    if (owner.isEmpty || repo.isEmpty) return;
+
+    if (_branches.isEmpty && !_branchesLoading) {
+      setState(() => _branchesLoading = true);
+      final list = await _guard(() => _githubService!.listBranches(owner, repo));
+      if (mounted) {
+        setState(() {
+          _branches = list ?? [];
+          _branchesLoading = false;
+        });
+      }
+    }
+    if (!mounted || _branches.isEmpty) return;
+
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(t('browser.branch_switcher_title'), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            ),
+            Flexible(
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: _branches.length,
+                itemBuilder: (context, index) {
+                  final b = _branches[index];
+                  return ListTile(
+                    leading: Icon(b == _currentBranch ? Icons.radio_button_checked_rounded : Icons.radio_button_unchecked_rounded),
+                    title: Text(b),
+                    onTap: () => Navigator.pop(ctx, b),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+
+    if (selected != null && selected != _currentBranch) {
+      setState(() => _currentBranch = selected);
+      await _loadRootContents();
+    }
   }
 
   Future<void> _openFolder(String path) async {
@@ -139,6 +217,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
           _ownerController.text.trim(),
           _repoController.text.trim(),
           path: path,
+          ref: _currentBranch,
         ));
     if (files != null) {
       setState(() {
@@ -170,6 +249,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
       file: file,
       githubService: _githubService!,
       canEdit: true, // GitHub sẽ tự từ chối (403) nếu tài khoản không có quyền ghi
+      branch: _currentBranch,
     );
     if (saved == true && mounted) {
       if (_currentPath.isEmpty) {
@@ -187,7 +267,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
     setState(() => _loading = true);
     final owner = _ownerController.text.trim();
     final repo = _repoController.text.trim();
-    final files = await _guard(() => _githubService!.listAllFilesRecursive(owner, repo, path));
+    final files = await _guard(() => _githubService!.listAllFilesRecursive(owner, repo, path, ref: _currentBranch));
     if (mounted) setState(() => _loading = false);
     if (files == null || !mounted) return;
 
@@ -289,6 +369,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
           targetPath,
           bytes,
           commitMessage: messageController.text.trim(),
+          branch: _currentBranch,
         ).then((_) => true));
     if (mounted) setState(() => _loading = false);
 
@@ -312,6 +393,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
           _ownerController.text.trim(),
           _repoController.text.trim(),
           query.trim(),
+          ref: _currentBranch,
         ));
     if (results != null) setState(() => _searchResults = results);
     setState(() => _searchLoading = false);
@@ -320,7 +402,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
   Future<void> _openSearchResult(GithubFile result, {required bool preview}) async {
     final owner = _ownerController.text.trim();
     final repo = _repoController.text.trim();
-    final meta = await _guard(() => _githubService!.getFileMeta(owner, repo, result.path));
+    final meta = await _guard(() => _githubService!.getFileMeta(owner, repo, result.path, ref: _currentBranch));
     if (meta == null) return;
     if (preview) {
       await _previewFile(meta);
@@ -517,6 +599,20 @@ class _BrowserScreenState extends State<BrowserScreen> {
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                 ),
                 onSubmitted: _runSearch,
+              ),
+            ),
+          if (repoIsOpen && !_searching)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: ActionChip(
+                  avatar: _branchesLoading
+                      ? SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: scheme.primary))
+                      : Icon(Icons.alt_route_rounded, size: 16, color: scheme.primary),
+                  label: Text(_currentBranch ?? '…'),
+                  onPressed: _openBranchSwitcher,
+                ),
               ),
             ),
           if (_currentPath.isNotEmpty && !_searching)

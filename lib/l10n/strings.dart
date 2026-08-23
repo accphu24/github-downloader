@@ -177,6 +177,11 @@ const _vi = <String, String>{
   'settings.ci_watch_hint': 'Đang theo dõi {count} repo đã ghim. Ghim/bỏ ghim thêm ở màn danh sách repo.',
   'settings.ci_watch_no_pins': 'Ghim ít nhất 1 repo ở màn danh sách repo để dùng tính năng này.',
 
+  // Branch switcher & diff preview
+  'browser.branch_switcher_title': 'Chọn branch',
+  'editor.diff_too_large': 'File quá lớn để hiện chi tiết thay đổi từng dòng. Vẫn commit bình thường được.',
+  'editor.diff_no_changes': 'Không có thay đổi nào.',
+
   // Thông báo
   'notif.title': 'Thông báo',
   'notif.tooltip': 'Thông báo',
@@ -362,6 +367,11 @@ const _en = <String, String>{
   'settings.ci_watch_enable': 'Notify when build finishes',
   'settings.ci_watch_hint': 'Watching {count} pinned repos. Pin/unpin more on the repo list screen.',
   'settings.ci_watch_no_pins': 'Pin at least 1 repo on the repo list screen to use this.',
+
+  // Branch switcher & diff preview
+  'browser.branch_switcher_title': 'Select branch',
+  'editor.diff_too_large': 'File too large to show line-by-line changes. You can still commit normally.',
+  'editor.diff_no_changes': 'No changes.',
 
   // Notifications
   'notif.title': 'Notifications',
