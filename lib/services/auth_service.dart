@@ -5,7 +5,7 @@ import 'package:http/http.dart' as http;
 import 'log_service.dart';
 
 class AuthService {
-  static const String clientId = 'Ov23ct4O7d9Fv0KW1kC8';
+  static const String clientId = 'Ov23liwbI2dUbJoBSMAv';
 
   static const String backendUrl = 'https://oauth-backend-tnwn.onrender.com';
 
