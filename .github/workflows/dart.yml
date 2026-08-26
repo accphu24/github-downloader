@@ -1,0 +1,49 @@
+# This workflow uses actions that are not certified by GitHub.
+# They are provided by a third-party and are governed by
+# separate terms of service, privacy policy, and support
+# documentation.
+
+name: Dart
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Đây là dự án FLUTTER (pubspec.yaml có "flutter: sdk: flutter"), không
+      # phải 1 gói Dart thuần - nên phải dùng Flutter SDK, không phải
+      # dart-lang/setup-dart. Trước đây dùng dart-lang/setup-dart + "dart pub
+      # get" nên bước cài dependency sẽ lỗi ngay: Dart SDK độc lập không tự
+      # resolve được dependency "sdk: flutter", check này luôn đỏ oan.
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      # Uncomment this step to verify the use of 'dart format' on each commit.
+      # - name: Verify formatting
+      #   run: dart format --output=none --set-exit-if-changed .
+
+      # Consider passing '--fatal-infos' for slightly stricter analysis.
+      - name: Analyze project source
+        run: flutter analyze
+
+      # Dự án hiện chưa có thư mục test/ - bỏ qua thay vì để "flutter test" báo
+      # lỗi, nhưng vẫn tự chạy khi sau này bạn thêm test vào.
+      - name: Run tests
+        run: |
+          if [ -d test ]; then
+            flutter test
+          else
+            echo "Chưa có thư mục test/, bỏ qua bước này."
+          fi
