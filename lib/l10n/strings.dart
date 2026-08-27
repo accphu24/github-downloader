@@ -52,6 +52,9 @@ const _vi = <String, String>{
   'repolist.perm_read': 'Chỉ đọc (Read-only)',
   'repolist.perm_unknown': 'Không rõ',
   'repolist.settings_tooltip': 'Cài đặt',
+  'repolist.filter_mine': 'Của tôi',
+  'repolist.filter_all': 'Tất cả',
+  'repolist.section_pinned': 'Đã ghim',
 
   // Duyệt file
   'browser.title_named': 'Xin chào, {username}',
@@ -260,6 +263,9 @@ const _en = <String, String>{
   'repolist.perm_read': 'Read-only',
   'repolist.perm_unknown': 'Unknown',
   'repolist.settings_tooltip': 'Settings',
+  'repolist.filter_mine': 'Mine',
+  'repolist.filter_all': 'All',
+  'repolist.section_pinned': 'Pinned',
 
   'browser.title_named': 'Hi, {username}',
   'browser.title_generic': 'Browse repo',

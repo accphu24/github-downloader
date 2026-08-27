@@ -75,3 +75,19 @@ File `github-downloader-fixed (1).zip` nằm lồng bên trong bản zip gốc b
 upload (có vẻ là 1 bản backup cũ từ máy bạn, ngày 16/08) đã KHÔNG được đưa
 vào bản zip mới này để tránh rối - nếu cần bản đó, dùng lại file gốc bạn đã
 upload.
+
+## Cập nhật thêm (theo phản hồi UI)
+
+12. **`lib/screens/repo_list_screen.dart`**: thêm hàng chip lọc theo chủ sở
+    hữu ("Của tôi" / "Tất cả" / từng tổ chức) ngay dưới ô tìm kiếm, mặc định
+    chọn sẵn "Của tôi". Trước đây danh sách luôn gộp chung repo cá nhân với
+    repo tổ chức/repo chỉ là collaborator (do API gọi `affiliation:
+    owner,collaborator,organization_member`), khiến danh sách vừa dài vừa khó
+    tìm đúng repo của mình. Repo đã ghim luôn hiện bất kể đang chọn lọc nào.
+    Chip lọc tự ẩn nếu tài khoản chỉ có repo của riêng mình (không có gì để lọc).
+
+13. **`lib/screens/repo_list_screen.dart`** (bổ sung): khi chọn "Tất cả" và
+    không tìm kiếm, danh sách tự NHÓM theo owner kèm tiêu đề + số lượng
+    ("Đã ghim", "Của tôi", tên từng tổ chức...) thay vì 1 danh sách phẳng dài.
+    Chọn riêng 1 owner qua chip hoặc đang tìm kiếm thì vẫn hiện phẳng như cũ
+    (nhóm lúc đó chỉ thừa).

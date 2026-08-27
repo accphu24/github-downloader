@@ -14,6 +14,15 @@ class _RepoCache {
   static List<GithubRepo>? repos;
 }
 
+/// 1 dòng trong danh sách đã nhóm: hoặc là tiêu đề nhóm (headerLabel != null),
+/// hoặc là 1 repo cụ thể (repo != null) - không bao giờ cả 2 cùng lúc.
+class _RepoRow {
+  final String? headerLabel;
+  final GithubRepo? repo;
+  _RepoRow.header(this.headerLabel) : repo = null;
+  _RepoRow.item(this.repo) : headerLabel = null;
+}
+
 class RepoListScreen extends StatefulWidget {
   const RepoListScreen({super.key});
 
@@ -34,6 +43,14 @@ class _RepoListScreenState extends State<RepoListScreen> {
   String? _username;
   int _unreadCount = 0;
 
+  // "" đại diện cho "Tất cả" (không lọc theo owner). Mặc định lọc riêng theo
+  // TÀI KHOẢN CÁ NHÂN ngay khi mở màn hình - trước đây danh sách luôn gộp
+  // chung repo tổ chức/repo chỉ là collaborator lẫn với repo của riêng mình
+  // (API gọi affiliation: owner,collaborator,organization_member), khiến danh
+  // sách vừa dài vừa khó phân biệt đâu là repo của mình.
+  static const _kAllOwners = '';
+  String _selectedOwner = _kAllOwners;
+
   @override
   void initState() {
     super.initState();
@@ -52,6 +69,7 @@ class _RepoListScreenState extends State<RepoListScreen> {
     final username = await _authService.getUsername();
     _githubService = GithubService(token: token);
     _username = username;
+    _selectedOwner = username ?? _kAllOwners;
     _pinned = await _pinnedService.getPinned();
     _loadUnreadCount(); // chạy ngầm, không chặn danh sách repo hiện chính
 
@@ -74,11 +92,36 @@ class _RepoListScreenState extends State<RepoListScreen> {
     return [...pinnedRepos, ...rest];
   }
 
+  /// Danh sách các owner (tài khoản cá nhân + mọi tổ chức) đang có repo, tài
+  /// khoản cá nhân của người dùng luôn xếp lên đầu.
+  List<String> _availableOwners() {
+    final owners = _allRepos.map((r) => r.owner).toSet().toList()
+      ..sort((a, b) {
+        if (a == _username) return -1;
+        if (b == _username) return 1;
+        return a.toLowerCase().compareTo(b.toLowerCase());
+      });
+    return owners;
+  }
+
+  Map<String, int> _ownerCounts() {
+    final counts = <String, int>{};
+    for (final r in _allRepos) {
+      counts[r.owner] = (counts[r.owner] ?? 0) + 1;
+    }
+    return counts;
+  }
+
   void _applyFilter() {
     final query = _searchController.text.trim().toLowerCase();
-    final base = query.isEmpty
-        ? _allRepos
-        : _allRepos.where((r) => r.fullName.toLowerCase().contains(query)).toList();
+    final base = _allRepos.where((r) {
+      // Repo đã ghim luôn hiện bất kể đang lọc theo owner nào - ghim là lối tắt
+      // người dùng chủ động chọn, không nên bị bộ lọc owner che mất.
+      final matchesOwner =
+          _selectedOwner == _kAllOwners || r.owner == _selectedOwner || _pinned.contains(r.fullName);
+      final matchesQuery = query.isEmpty || r.fullName.toLowerCase().contains(query);
+      return matchesOwner && matchesQuery;
+    }).toList();
     setState(() => _filteredRepos = _sortWithPinnedFirst(base));
   }
 
@@ -181,6 +224,148 @@ class _RepoListScreenState extends State<RepoListScreen> {
     return t('repolist.perm_unknown');
   }
 
+  /// Hàng chip lọc theo chủ sở hữu (Của tôi / Tất cả / từng tổ chức) - tự ẩn
+  /// nếu tất cả repo đều cùng 1 owner (không có gì để lọc).
+  Widget _buildOwnerFilterRow(ColorScheme scheme) {
+    final owners = _availableOwners();
+    if (owners.length <= 1) return const SizedBox.shrink();
+    final counts = _ownerCounts();
+
+    Widget chip(String key, String label, int count) {
+      final selected = _selectedOwner == key;
+      return Padding(
+        padding: const EdgeInsets.only(right: 6),
+        child: ChoiceChip(
+          label: Text('$label ($count)'),
+          selected: selected,
+          onSelected: (_) => setState(() {
+            _selectedOwner = key;
+            _applyFilter();
+          }),
+        ),
+      );
+    }
+
+    // Thứ tự: Của tôi -> Tất cả -> các tổ chức khác (A-Z). Đặt "Tất cả" ngay
+    // vị trí 2 để luôn trong tầm tay dù bạn ở trong nhiều tổ chức (nếu để cuối
+    // cùng, hàng chip dài sẽ đẩy nó ra ngoài màn hình).
+    final others = owners.where((o) => o != _username).toList();
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: Row(
+          children: [
+            if (_username != null) chip(_username!, t('repolist.filter_mine'), counts[_username] ?? 0),
+            chip(_kAllOwners, t('repolist.filter_all'), _allRepos.length),
+            for (final owner in others) chip(owner, owner, counts[owner] ?? 0),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Chỉ nhóm khi đang xem "Tất cả" VÀ không tìm kiếm - nếu đã chọn riêng 1
+  /// owner qua chip thì mọi repo hiện ra vốn đã cùng 1 nhóm rồi, thêm tiêu đề
+  /// lúc đó chỉ thừa; lúc đang tìm kiếm thì ưu tiên thấy ngay kết quả, khỏi
+  /// phải dò qua từng nhóm.
+  bool get _shouldGroupByOwner => _selectedOwner == _kAllOwners && _searchController.text.trim().isEmpty;
+
+  /// Gộp _filteredRepos thành danh sách phẳng gồm tiêu đề + repo, để
+  /// ListView.builder render đơn giản (không cần widget nhóm lồng nhau).
+  /// Thứ tự: "Đã ghim" trước tiên (nếu có), rồi tới từng owner (mình lên đầu,
+  /// còn lại A-Z).
+  List<_RepoRow> _buildGroupedRows() {
+    final rows = <_RepoRow>[];
+    final pinnedRepos = _filteredRepos.where((r) => _pinned.contains(r.fullName)).toList();
+    final rest = _filteredRepos.where((r) => !_pinned.contains(r.fullName)).toList();
+
+    if (pinnedRepos.isNotEmpty) {
+      rows.add(_RepoRow.header('${t('repolist.section_pinned')} (${pinnedRepos.length})'));
+      rows.addAll(pinnedRepos.map((r) => _RepoRow.item(r)));
+    }
+
+    final byOwner = <String, List<GithubRepo>>{};
+    for (final r in rest) {
+      byOwner.putIfAbsent(r.owner, () => []).add(r);
+    }
+    final owners = byOwner.keys.toList()
+      ..sort((a, b) {
+        if (a == _username) return -1;
+        if (b == _username) return 1;
+        return a.toLowerCase().compareTo(b.toLowerCase());
+      });
+    for (final owner in owners) {
+      final items = byOwner[owner]!;
+      final label = owner == _username ? t('repolist.filter_mine') : owner;
+      rows.add(_RepoRow.header('$label (${items.length})'));
+      rows.addAll(items.map((r) => _RepoRow.item(r)));
+    }
+    return rows;
+  }
+
+  Widget _buildSectionHeader(String label, ColorScheme scheme) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 14, 4, 6),
+      child: Text(
+        label,
+        style: TextStyle(fontWeight: FontWeight.w700, color: scheme.outline, fontSize: 12.5, letterSpacing: 0.3),
+      ),
+    );
+  }
+
+  /// Card hiển thị 1 repo - tách riêng thành hàm dùng chung cho cả chế độ
+  /// danh sách phẳng lẫn danh sách đã nhóm theo owner, tránh lặp code.
+  Widget _buildRepoCard(GithubRepo repo, ColorScheme scheme) {
+    final isPinned = _pinned.contains(repo.fullName);
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      color: isPinned
+          ? scheme.primaryContainer.withValues(alpha: 0.35)
+          : scheme.surfaceContainerHighest.withValues(alpha: 0.4),
+      child: ListTile(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        leading: CircleAvatar(
+          backgroundColor: repo.private ? scheme.errorContainer : scheme.primaryContainer,
+          child: Icon(
+            repo.private ? Icons.lock_rounded : Icons.public_rounded,
+            size: 18,
+            color: repo.private ? scheme.onErrorContainer : scheme.onPrimaryContainer,
+          ),
+        ),
+        title: Text(repo.fullName, style: const TextStyle(fontWeight: FontWeight.w600)),
+        subtitle: repo.description != null && repo.description!.isNotEmpty
+            ? Text(repo.description!, maxLines: 1, overflow: TextOverflow.ellipsis)
+            : null,
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Chip(
+              label: Text(
+                _permissionLabel(repo),
+                style: const TextStyle(color: Colors.white, fontSize: 11),
+              ),
+              backgroundColor: _permissionColor(context, repo),
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+            ),
+            IconButton(
+              icon: Icon(
+                isPinned ? Icons.star_rounded : Icons.star_border_rounded,
+                color: isPinned ? Colors.amber : scheme.outline,
+              ),
+              tooltip: isPinned ? t('repolist.unpin_tooltip') : t('repolist.pin_tooltip'),
+              onPressed: () => _togglePin(repo),
+            ),
+          ],
+        ),
+        onTap: () => _openRepo(repo),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -215,6 +400,7 @@ class _RepoListScreenState extends State<RepoListScreen> {
               ),
             ),
           ),
+          _buildOwnerFilterRow(scheme),
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
@@ -243,58 +429,25 @@ class _RepoListScreenState extends State<RepoListScreen> {
                           )
                         : RefreshIndicator(
                             onRefresh: () => _loadRepos(),
-                            child: ListView.builder(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                              itemCount: _filteredRepos.length,
-                              itemBuilder: (context, index) {
-                                final repo = _filteredRepos[index];
-                                final isPinned = _pinned.contains(repo.fullName);
-                                return Card(
-                                  margin: const EdgeInsets.symmetric(vertical: 4),
-                                  color: isPinned
-                                      ? scheme.primaryContainer.withValues(alpha: 0.35)
-                                      : scheme.surfaceContainerHighest.withValues(alpha: 0.4),
-                                  child: ListTile(
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                                    leading: CircleAvatar(
-                                      backgroundColor: repo.private ? scheme.errorContainer : scheme.primaryContainer,
-                                      child: Icon(
-                                        repo.private ? Icons.lock_rounded : Icons.public_rounded,
-                                        size: 18,
-                                        color: repo.private ? scheme.onErrorContainer : scheme.onPrimaryContainer,
-                                      ),
-                                    ),
-                                    title: Text(repo.fullName, style: const TextStyle(fontWeight: FontWeight.w600)),
-                                    subtitle: repo.description != null && repo.description!.isNotEmpty
-                                        ? Text(repo.description!, maxLines: 1, overflow: TextOverflow.ellipsis)
-                                        : null,
-                                    trailing: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Chip(
-                                          label: Text(
-                                            _permissionLabel(repo),
-                                            style: const TextStyle(color: Colors.white, fontSize: 11),
-                                          ),
-                                          backgroundColor: _permissionColor(context, repo),
-                                          visualDensity: VisualDensity.compact,
-                                          padding: const EdgeInsets.symmetric(horizontal: 4),
-                                        ),
-                                        IconButton(
-                                          icon: Icon(
-                                            isPinned ? Icons.star_rounded : Icons.star_border_rounded,
-                                            color: isPinned ? Colors.amber : scheme.outline,
-                                          ),
-                                          tooltip: isPinned ? t('repolist.unpin_tooltip') : t('repolist.pin_tooltip'),
-                                          onPressed: () => _togglePin(repo),
-                                        ),
-                                      ],
-                                    ),
-                                    onTap: () => _openRepo(repo),
+                            child: _shouldGroupByOwner
+                                ? Builder(builder: (context) {
+                                    final rows = _buildGroupedRows();
+                                    return ListView.builder(
+                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                      itemCount: rows.length,
+                                      itemBuilder: (context, index) {
+                                        final row = rows[index];
+                                        return row.headerLabel != null
+                                            ? _buildSectionHeader(row.headerLabel!, scheme)
+                                            : _buildRepoCard(row.repo!, scheme);
+                                      },
+                                    );
+                                  })
+                                : ListView.builder(
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                    itemCount: _filteredRepos.length,
+                                    itemBuilder: (context, index) => _buildRepoCard(_filteredRepos[index], scheme),
                                   ),
-                                );
-                              },
-                            ),
                           ),
           ),
         ],
