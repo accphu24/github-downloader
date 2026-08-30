@@ -91,3 +91,37 @@ upload.
     ("Đã ghim", "Của tôi", tên từng tổ chức...) thay vì 1 danh sách phẳng dài.
     Chọn riêng 1 owner qua chip hoặc đang tìm kiếm thì vẫn hiện phẳng như cũ
     (nhóm lúc đó chỉ thừa).
+
+## Cập nhật thêm (theo phản hồi màn khoá vân tay)
+
+14. **`lib/services/app_settings.dart`, `lib/screens/lock_screen.dart`,
+    `lib/main.dart`**: thêm khoảng "ân hạn" 30 phút cho màn khoá vân tay.
+    Trước đây trạng thái "đã mở khoá" (`_unlocked`) chỉ sống trong RAM, nên
+    mỗi khi Android tự giết tiến trình app lúc chạy nền (rất hay gặp, nhất là
+    máy chạy nhiều tiến trình cùng lúc) là mất trạng thái, mở lại app phải
+    verify lại dù chỉ vừa đóng app trước đó ít phút. Giờ mốc thời gian verify
+    thành công gần nhất được lưu bền (`AppSettings.lastUnlockedAt`), mở lại
+    app trong vòng 30 phút kể từ lần verify gần nhất sẽ được bỏ qua màn khoá.
+    Muốn đổi thời lượng, sửa hằng số `AppSettings.unlockGracePeriod`.
+
+## Gỡ bỏ tính năng (theo yêu cầu)
+
+15. **Gỡ hoàn toàn tính năng khoá vân tay/khuôn mặt** — theo yêu cầu, không
+    còn giữ dạng "ân hạn" nữa mà bỏ hẳn:
+    - Xoá file `lib/screens/lock_screen.dart`
+    - Gỡ `LockScreen` khỏi luồng khởi động (`lib/main.dart`) - đăng nhập xong
+      vào thẳng danh sách repo
+    - Gỡ `biometricLockEnabled`, `lastUnlockedAt`, `unlockGracePeriod`,
+      `markUnlockedNow()` và các key lưu trữ liên quan khỏi
+      `lib/services/app_settings.dart`
+    - Gỡ card "Khoá app bằng vân tay/khuôn mặt" khỏi Cài đặt
+      (`lib/screens/settings_screen.dart`)
+    - Xoá 7 khoá dịch liên quan (`lock.*`, `settings.section_security`,
+      `settings.biometric_lock`) khỏi `lib/l10n/strings.dart`
+    - Gỡ dependency `local_auth` khỏi `pubspec.yaml`
+
+    Lưu ý: file `android/app/src/main/AndroidManifest.xml` (không nằm trong
+    những gì bạn gửi cho tôi, do Flutter tự sinh khi tạo project) có thể vẫn
+    còn khai báo quyền `USE_BIOMETRIC` từ trước - quyền không dùng tới thì
+    không gây lỗi gì, nhưng muốn dọn sạch hẳn thì tự kiểm tra/xoá dòng đó
+    trong file đó nhé (tôi không có file này để sửa trực tiếp).

@@ -73,15 +73,6 @@ const _vi = <String, String>{
   'browser.upload_button': 'Tải lên',
   'browser.upload_success': 'Đã tải file lên repo thành công!',
 
-  'lock.title': 'Ứng dụng đã khoá',
-  'lock.subtitle': 'Xác thực để tiếp tục sử dụng',
-  'lock.unlock_button': 'Mở khoá',
-  'lock.failed': 'Xác thực thất bại, thử lại nhé.',
-  'lock.not_available': 'Thiết bị không hỗ trợ hoặc chưa cài vân tay/khuôn mặt.',
-
-  'settings.section_security': 'Bảo mật',
-  'settings.biometric_lock': 'Khoá app bằng vân tay/khuôn mặt',
-
   'settings.section_backup': 'Sao lưu & khôi phục',
   'settings.backup_export': 'Xuất dữ liệu ra file',
   'settings.backup_import': 'Khôi phục từ file',
@@ -282,15 +273,6 @@ const _en = <String, String>{
   'browser.upload_filename_label': 'File name in repo',
   'browser.upload_button': 'Upload',
   'browser.upload_success': 'File uploaded to repo successfully!',
-
-  'lock.title': 'App locked',
-  'lock.subtitle': 'Authenticate to continue',
-  'lock.unlock_button': 'Unlock',
-  'lock.failed': 'Authentication failed, please try again.',
-  'lock.not_available': 'This device doesn\'t support or hasn\'t set up fingerprint/face unlock.',
-
-  'settings.section_security': 'Security',
-  'settings.biometric_lock': 'Lock app with fingerprint/face',
 
   'settings.section_backup': 'Backup & restore',
   'settings.backup_export': 'Export data to file',

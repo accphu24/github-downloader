@@ -19,8 +19,6 @@ class AppSettings extends ChangeNotifier {
   bool musicEnabled = false;
   double musicVolume = 0.5;
 
-  bool biometricLockEnabled = false;
-
   /// Bật tính năng theo dõi CI/CD nền: định kỳ kiểm tra các repo đã ghim (pin),
   /// báo qua thông báo hệ thống khi 1 lần chạy Actions vừa hoàn thành.
   bool ciWatchEnabled = false;
@@ -39,7 +37,6 @@ class AppSettings extends ChangeNotifier {
   static const _kMusicUrl = 'settings_music_url';
   static const _kMusicEnabled = 'settings_music_enabled';
   static const _kMusicVolume = 'settings_music_volume';
-  static const _kBiometricLock = 'settings_biometric_lock';
   static const _kDetailedLog = 'settings_detailed_log';
   static const _kCiWatch = 'settings_ci_watch_enabled';
 
@@ -77,9 +74,6 @@ class AppSettings extends ChangeNotifier {
 
       final mv = await _storage.read(key: _kMusicVolume);
       if (mv != null) musicVolume = double.tryParse(mv) ?? musicVolume;
-
-      final bl = await _storage.read(key: _kBiometricLock);
-      if (bl != null) biometricLockEnabled = bl == 'true';
 
       final dl = await _storage.read(key: _kDetailedLog);
       if (dl != null) detailedLogEnabled = dl == 'true';
@@ -135,12 +129,6 @@ class AppSettings extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> setBiometricLockEnabled(bool value) async {
-    biometricLockEnabled = value;
-    await _storage.write(key: _kBiometricLock, value: value.toString());
-    notifyListeners();
-  }
-
   Future<void> setDetailedLogEnabled(bool value) async {
     detailedLogEnabled = value;
     await _storage.write(key: _kDetailedLog, value: value.toString());
@@ -164,7 +152,6 @@ class AppSettings extends ChangeNotifier {
         'musicUrl': musicUrl,
         'musicEnabled': musicEnabled,
         'musicVolume': musicVolume,
-        'biometricLockEnabled': biometricLockEnabled,
         'detailedLogEnabled': detailedLogEnabled,
       };
 
@@ -178,7 +165,6 @@ class AppSettings extends ChangeNotifier {
     if (json['musicUrl'] is String) await setMusicUrl(json['musicUrl'] as String);
     if (json['musicEnabled'] is bool) await setMusicEnabled(json['musicEnabled'] as bool);
     if (json['musicVolume'] is num) await setMusicVolume((json['musicVolume'] as num).toDouble());
-    if (json['biometricLockEnabled'] is bool) await setBiometricLockEnabled(json['biometricLockEnabled'] as bool);
     if (json['detailedLogEnabled'] is bool) await setDetailedLogEnabled(json['detailedLogEnabled'] as bool);
   }
 }

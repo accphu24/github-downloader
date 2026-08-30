@@ -284,18 +284,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
               const SizedBox(height: 24),
-              _sectionTitle(context, t('settings.section_security')),
-              const SizedBox(height: 8),
-              Card(
-                color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
-                child: SwitchListTile(
-                  title: Text(t('settings.biometric_lock')),
-                  secondary: const Icon(Icons.fingerprint_rounded),
-                  value: settings.biometricLockEnabled,
-                  onChanged: (v) => settings.setBiometricLockEnabled(v),
-                ),
-              ),
-              const SizedBox(height: 24),
               _sectionTitle(context, t('settings.section_ci_watch')),
               const SizedBox(height: 8),
               Card(

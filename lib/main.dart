@@ -8,7 +8,6 @@ import 'services/keep_alive_service.dart';
 import 'services/ci_watch_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/repo_list_screen.dart';
-import 'screens/lock_screen.dart';
 import 'widgets/global_download_indicator.dart';
 
 /// Key toàn app để hiện thông báo (vd: "đã tải xong") ngay cả khi tác vụ tải
@@ -153,7 +152,6 @@ class _StartupGate extends StatefulWidget {
 class _StartupGateState extends State<_StartupGate> {
   final _authService = AuthService();
   bool? _loggedIn;
-  bool _unlocked = false;
 
   @override
   void initState() {
@@ -172,10 +170,6 @@ class _StartupGateState extends State<_StartupGate> {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
     if (!_loggedIn!) return const LoginScreen();
-
-    if (AppSettings.instance.biometricLockEnabled && !_unlocked) {
-      return LockScreen(onUnlocked: () => setState(() => _unlocked = true));
-    }
 
     return const RepoListScreen();
   }
