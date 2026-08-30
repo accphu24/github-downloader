@@ -125,3 +125,9 @@ upload.
     còn khai báo quyền `USE_BIOMETRIC` từ trước - quyền không dùng tới thì
     không gây lỗi gì, nhưng muốn dọn sạch hẳn thì tự kiểm tra/xoá dòng đó
     trong file đó nhé (tôi không có file này để sửa trực tiếp).
+
+## Dọn nốt (theo phát hiện khi build)
+
+16. **`.github/workflows/build_apk.yml`**: xoá bước tự thêm quyền
+    `USE_BIOMETRIC` vào AndroidManifest.xml lúc build — sót lại từ tính năng
+    khoá vân tay đã gỡ ở mục 15, không gây lỗi nhưng thừa.

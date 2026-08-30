@@ -75,14 +75,6 @@ jobs:
                   1,
               )
 
-          # Thêm quyền cho tính năng khoá vân tay/khuôn mặt (local_auth)
-          if 'USE_BIOMETRIC' not in content:
-              content = content.replace(
-                  "<application",
-                  '<uses-permission android:name="android.permission.USE_BIOMETRIC" />\n    <application',
-                  1,
-              )
-
           # Thêm quyền + service cho foreground service (giữ app không bị hệ thống giết
           # tiến trình khi người dùng thoát/ẩn app lúc đang tải file) - dùng bởi
           # flutter_foreground_task, xem lib/services/keep_alive_service.dart
