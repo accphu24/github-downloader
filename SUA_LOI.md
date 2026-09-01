@@ -131,3 +131,19 @@ upload.
 16. **`.github/workflows/build_apk.yml`**: xoá bước tự thêm quyền
     `USE_BIOMETRIC` vào AndroidManifest.xml lúc build — sót lại từ tính năng
     khoá vân tay đã gỡ ở mục 15, không gây lỗi nhưng thừa.
+
+## Cập nhật thêm (dọn dead code + điều hướng thư mục)
+
+17. **`lib/screens/lock_screen.dart`**: mục 15 nói đã xoá file này nhưng thực
+    tế vẫn còn sót lại trong bản zip (không còn được import ở đâu, không ảnh
+    hưởng build vì Flutter chỉ compile file được import - nhưng vẫn là rác).
+    Đã xoá hẳn lần này.
+
+18. **`lib/screens/browser_screen.dart`**: nút back (cả icon back trên AppBar
+    lẫn nút back cứng/gesture Android) trước đây luôn thoát thẳng ra khỏi màn
+    duyệt repo (`BrowserScreen`) dù đang ở sâu trong thư mục con, vì
+    `_currentPath` chỉ là 1 string phẳng và không có gì chặn hành vi pop mặc
+    định. Sửa: bọc `Scaffold` bằng `PopScope`, chỉ cho phép pop thật (thoát
+    màn hình) khi đang ở gốc repo (`_currentPath` rỗng); nếu đang ở thư mục
+    con thì nút back sẽ gọi hàm mới `_navigateUpOneLevel()` để lùi đúng 1 cấp
+    thư mục cha (`"a/b/c"` -> `"a/b"`) thay vì thoát luôn.

@@ -238,6 +238,15 @@ class _BrowserScreenState extends State<BrowserScreen> {
     setState(() => _loading = false);
   }
 
+  // Lùi lên đúng 1 cấp thư mục cha (dùng cho nút back AppBar/back cứng Android
+  // - xem PopScope trong build()). "a/b/c" -> "a/b"; nếu đang ở thư mục gốc
+  // của repo ("a" hoặc "") thì coi như không còn gì để lùi nữa.
+  void _navigateUpOneLevel() {
+    if (_currentPath.isEmpty) return;
+    final segments = _currentPath.split('/')..removeLast();
+    _openFolder(segments.join('/'));
+  }
+
   void _downloadFile(GithubFile file) {
     if (file.downloadUrl == null) return;
     DownloadManager.instance.runDownload(
@@ -507,7 +516,18 @@ class _BrowserScreenState extends State<BrowserScreen> {
     final scheme = Theme.of(context).colorScheme;
     final repoIsOpen = _ownerController.text.isNotEmpty && _repoController.text.isNotEmpty && _repoOpened;
 
-    return Scaffold(
+    // Đang ở trong 1 thư mục con (không phải gốc repo) -> nút back (AppBar lẫn
+    // back cứng Android) chỉ nên lùi lên 1 cấp thư mục, không thoát hẳn ra khỏi
+    // repo. Chỉ khi đang ở gốc mới cho phép pop thật (thoát BrowserScreen).
+    final canPopScreen = _currentPath.isEmpty;
+
+    return PopScope(
+      canPop: canPopScreen,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        _navigateUpOneLevel();
+      },
+      child: Scaffold(
       appBar: AppBar(
         title: Text(_username != null ? t('browser.title_named', {'username': _username!}) : t('browser.title_generic')),
         actions: [
@@ -682,6 +702,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
                     : _buildFileList(scheme),
           ),
         ],
+      ),
       ),
     );
   }
