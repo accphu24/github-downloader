@@ -218,13 +218,89 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
     return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
   }
 
+  /// Huỷ lần chạy này (chỉ khả dụng khi đang queued/in_progress).
+  Future<void> _cancelRun() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(t('actions.cancel_run_confirm')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(t('common.cancel'))),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(t('actions.cancel_run_button'))),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+    try {
+      await widget.githubService.cancelWorkflowRun(widget.owner, widget.repo, widget.run.id);
+      if (mounted) showTopNotification(context, t('actions.cancel_run_success'));
+      await Future.delayed(const Duration(seconds: 2));
+      if (mounted) _load();
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+    }
+  }
+
+  /// Chạy lại lần chạy này (chỉ khả dụng khi đã completed).
+  /// [onlyFailed]=true chỉ chạy lại các job bị lỗi, false chạy lại toàn bộ.
+  Future<void> _rerun({required bool onlyFailed}) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(onlyFailed ? t('actions.rerun_failed_confirm') : t('actions.rerun_confirm')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(t('common.cancel'))),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(onlyFailed ? t('actions.rerun_failed_button') : t('actions.rerun_button')),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+    try {
+      if (onlyFailed) {
+        await widget.githubService.rerunFailedJobs(widget.owner, widget.repo, widget.run.id);
+      } else {
+        await widget.githubService.rerunWorkflowRun(widget.owner, widget.repo, widget.run.id);
+      }
+      if (mounted) showTopNotification(context, t('actions.rerun_success'));
+      await Future.delayed(const Duration(seconds: 2));
+      if (mounted) _load();
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final run = widget.run;
 
     return Scaffold(
-      appBar: AppBar(title: Text(run.name, maxLines: 1, overflow: TextOverflow.ellipsis)),
+      appBar: AppBar(
+        title: Text(run.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+        actions: [
+          if (run.status == 'queued' || run.status == 'in_progress')
+            IconButton(
+              icon: const Icon(Icons.stop_circle_rounded),
+              tooltip: t('actions.cancel_run_button'),
+              onPressed: _cancelRun,
+            ),
+          if (run.status == 'completed')
+            PopupMenuButton<String>(
+              icon: const Icon(Icons.replay_rounded),
+              tooltip: t('actions.rerun_button'),
+              onSelected: (v) => _rerun(onlyFailed: v == 'failed'),
+              itemBuilder: (ctx) => [
+                PopupMenuItem(value: 'all', child: Text(t('actions.rerun_button'))),
+                PopupMenuItem(value: 'failed', child: Text(t('actions.rerun_failed_button'))),
+              ],
+            ),
+        ],
+      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null

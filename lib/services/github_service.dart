@@ -303,6 +303,89 @@ class Artifact {
       );
 }
 
+/// 1 workflow (file .yml trong .github/workflows), dùng để chạy thủ công (dispatch).
+class GithubWorkflow {
+  final int id;
+  final String name;
+  final String path;
+  final String state; // active, disabled_manually, ...
+
+  GithubWorkflow({required this.id, required this.name, required this.path, required this.state});
+
+  factory GithubWorkflow.fromJson(Map<String, dynamic> json) => GithubWorkflow(
+        id: json['id'],
+        name: json['name'] ?? '',
+        path: json['path'] ?? '',
+        state: json['state'] ?? '',
+      );
+}
+
+/// 1 người có quyền truy cập repo (owner, collaborator được mời, hoặc thành viên tổ chức).
+class Collaborator {
+  final String login;
+  final String avatarUrl;
+  final String permission; // admin, maintain, push, triage, pull
+
+  Collaborator({required this.login, required this.avatarUrl, required this.permission});
+
+  factory Collaborator.fromJson(Map<String, dynamic> json) {
+    final perms = json['permissions'] as Map<String, dynamic>? ?? {};
+    String permission = 'pull';
+    if (perms['admin'] == true) {
+      permission = 'admin';
+    } else if (perms['maintain'] == true) {
+      permission = 'maintain';
+    } else if (perms['push'] == true) {
+      permission = 'push';
+    } else if (perms['triage'] == true) {
+      permission = 'triage';
+    }
+    return Collaborator(
+      login: json['login'] ?? '',
+      avatarUrl: json['avatar_url'] ?? '',
+      permission: (json['role_name'] as String?) ?? permission,
+    );
+  }
+}
+
+/// 1 webhook đã cấu hình trên repo (thông báo tới URL ngoài khi có sự kiện xảy ra).
+class GithubWebhook {
+  final int id;
+  final String url;
+  final bool active;
+  final List<String> events;
+
+  GithubWebhook({required this.id, required this.url, required this.active, required this.events});
+
+  factory GithubWebhook.fromJson(Map<String, dynamic> json) {
+    final config = json['config'] as Map<String, dynamic>? ?? {};
+    final List eventsJson = json['events'] ?? [];
+    return GithubWebhook(
+      id: json['id'],
+      url: config['url'] ?? '',
+      active: json['active'] ?? true,
+      events: eventsJson.map((e) => e.toString()).toList(),
+    );
+  }
+}
+
+/// 1 kết quả tìm kiếm code TOÀN GITHUB (không giới hạn trong 1 repo đang mở).
+class CodeSearchResult {
+  final String name;
+  final String path;
+  final String repoFullName;
+  final String htmlUrl;
+
+  CodeSearchResult({required this.name, required this.path, required this.repoFullName, required this.htmlUrl});
+
+  factory CodeSearchResult.fromJson(Map<String, dynamic> json) => CodeSearchResult(
+        name: json['name'] ?? '',
+        path: json['path'] ?? '',
+        repoFullName: json['repository']?['full_name'] ?? '',
+        htmlUrl: json['html_url'] ?? '',
+      );
+}
+
 class GithubService {
   final String? token;
   GithubService({this.token});
@@ -735,5 +818,244 @@ class GithubService {
     final url = Uri.https('api.github.com', '/notifications');
     final response = await http.put(url, headers: {..._headers, 'Content-Type': 'application/json'}, body: jsonEncode({}));
     _checkStatus(response, 'Không đánh dấu tất cả đã đọc được');
+  }
+
+  // ================== #3: Xoá file / thư mục ==================
+
+  /// Xoá 1 file khỏi repo (tạo 1 commit xoá). Cần [sha] hiện tại của file
+  /// (giống updateFile) để tránh xoá nhầm bản đã bị người khác thay đổi.
+  Future<void> deleteFile(
+    String owner,
+    String repo,
+    String path,
+    String sha, {
+    String? commitMessage,
+    String? branch,
+  }) async {
+    final url = Uri.https('api.github.com', '/repos/$owner/$repo/contents/$path');
+    final response = await http.delete(
+      url,
+      headers: {..._headers, 'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'message': commitMessage ?? 'Delete $path via GitHub Repo Downloader',
+        'sha': sha,
+        if (branch != null) 'branch': branch,
+      }),
+    );
+    if (response.statusCode == 409) {
+      throw Exception('File đã bị thay đổi ở nơi khác (conflict). Hãy làm mới danh sách rồi thử lại.');
+    }
+    _checkStatus(response, 'Xoá file thất bại');
+  }
+
+  /// Xoá TOÀN BỘ file bên trong 1 thư mục (đệ quy). GitHub Contents API không
+  /// có khái niệm "xoá thư mục" (git không lưu thư mục rỗng) nên phải xoá từng
+  /// file một - mỗi file là 1 commit riêng. Truyền [files] lấy từ
+  /// listAllFilesRecursive() để UI có thể đếm số lượng và cảnh báo trước.
+  /// [onProgress] báo tiến độ (đã xoá/tổng số) để hiện thanh tiến trình.
+  Future<void> deleteFolder(
+    String owner,
+    String repo,
+    List<GithubFile> files, {
+    String? branch,
+    void Function(int done, int total)? onProgress,
+  }) async {
+    for (var i = 0; i < files.length; i++) {
+      final file = files[i];
+      if (file.sha != null) {
+        await deleteFile(
+          owner,
+          repo,
+          file.path,
+          file.sha!,
+          branch: branch,
+          commitMessage: 'Delete ${file.path} via GitHub Repo Downloader',
+        );
+      }
+      onProgress?.call(i + 1, files.length);
+    }
+  }
+
+  // ================== #4: Điều khiển GitHub Actions ==================
+
+  /// Liệt kê các workflow (file .yml) có trong repo, dùng để chọn workflow
+  /// muốn chạy thủ công.
+  Future<List<GithubWorkflow>> listWorkflows(String owner, String repo) async {
+    return _withRetry(() async {
+      final url = Uri.https('api.github.com', '/repos/$owner/$repo/actions/workflows', {'per_page': '100'});
+      final response = await http.get(url, headers: _headers);
+      _checkStatus(response, 'Không lấy được danh sách workflow');
+      final data = jsonDecode(response.body);
+      final List items = data['workflows'] ?? [];
+      return items.map((e) => GithubWorkflow.fromJson(e)).toList();
+    });
+  }
+
+  /// Kích hoạt chạy 1 workflow thủ công. Chỉ hoạt động nếu file .yml của
+  /// workflow có khai báo trigger `workflow_dispatch:` - nếu không GitHub trả 404.
+  Future<void> dispatchWorkflow(
+    String owner,
+    String repo,
+    int workflowId, {
+    required String ref,
+    Map<String, String>? inputs,
+  }) async {
+    final url = Uri.https('api.github.com', '/repos/$owner/$repo/actions/workflows/$workflowId/dispatches');
+    final response = await http.post(
+      url,
+      headers: {..._headers, 'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'ref': ref,
+        if (inputs != null && inputs.isNotEmpty) 'inputs': inputs,
+      }),
+    );
+    if (response.statusCode == 404) {
+      throw Exception('Không chạy được workflow (404) - workflow này có thể chưa khai báo trigger "workflow_dispatch" trong file yml.');
+    }
+    if (response.statusCode == 422) {
+      throw Exception('Không chạy được workflow (422) - kiểm tra lại tên branch/tham số truyền vào.');
+    }
+    _checkStatus(response, 'Kích hoạt workflow thất bại');
+  }
+
+  /// Huỷ 1 lần chạy Actions đang chờ hoặc đang chạy dở.
+  Future<void> cancelWorkflowRun(String owner, String repo, int runId) async {
+    final url = Uri.https('api.github.com', '/repos/$owner/$repo/actions/runs/$runId/cancel');
+    final response = await http.post(url, headers: _headers);
+    _checkStatus(response, 'Huỷ workflow thất bại');
+  }
+
+  /// Chạy lại TOÀN BỘ 1 lần chạy Actions đã kết thúc (kể cả các job đã thành công).
+  Future<void> rerunWorkflowRun(String owner, String repo, int runId) async {
+    final url = Uri.https('api.github.com', '/repos/$owner/$repo/actions/runs/$runId/rerun');
+    final response = await http.post(url, headers: _headers);
+    _checkStatus(response, 'Chạy lại workflow thất bại');
+  }
+
+  /// Chỉ chạy lại các job BỊ LỖI của 1 lần chạy Actions (nhanh hơn rerun toàn bộ).
+  Future<void> rerunFailedJobs(String owner, String repo, int runId) async {
+    final url = Uri.https('api.github.com', '/repos/$owner/$repo/actions/runs/$runId/rerun-failed-jobs');
+    final response = await http.post(url, headers: _headers);
+    _checkStatus(response, 'Chạy lại job lỗi thất bại');
+  }
+
+  // ================== #10: Collaborators & Webhooks ==================
+
+  /// Liệt kê những người có quyền truy cập repo. Cần quyền admin trên repo
+  /// (xem GithubRepo.canAdmin) mới gọi được endpoint này.
+  Future<List<Collaborator>> listCollaborators(String owner, String repo) async {
+    return _withRetry(() async {
+      final url = Uri.https('api.github.com', '/repos/$owner/$repo/collaborators', {'per_page': '100'});
+      final response = await http.get(url, headers: _headers);
+      _checkStatus(response, 'Không lấy được danh sách collaborator');
+      final List data = jsonDecode(response.body);
+      return data.map((e) => Collaborator.fromJson(e)).toList();
+    });
+  }
+
+  /// Mời/thêm 1 collaborator với quyền [permission]
+  /// (pull/triage/push/maintain/admin). Nếu người đó chưa từng cộng tác cùng
+  /// bạn, GitHub sẽ gửi lời mời qua email/thông báo thay vì thêm ngay lập tức.
+  Future<void> addCollaborator(String owner, String repo, String username, {String permission = 'push'}) async {
+    final url = Uri.https('api.github.com', '/repos/$owner/$repo/collaborators/$username');
+    final response = await http.put(
+      url,
+      headers: {..._headers, 'Content-Type': 'application/json'},
+      body: jsonEncode({'permission': permission}),
+    );
+    if (response.statusCode == 404) {
+      throw Exception('Không tìm thấy tài khoản GitHub "$username".');
+    }
+    _checkStatus(response, 'Thêm collaborator thất bại');
+  }
+
+  Future<void> removeCollaborator(String owner, String repo, String username) async {
+    final url = Uri.https('api.github.com', '/repos/$owner/$repo/collaborators/$username');
+    final response = await http.delete(url, headers: _headers);
+    _checkStatus(response, 'Xoá collaborator thất bại');
+  }
+
+  /// Liệt kê webhook đã cấu hình trên repo.
+  Future<List<GithubWebhook>> listWebhooks(String owner, String repo) async {
+    return _withRetry(() async {
+      final url = Uri.https('api.github.com', '/repos/$owner/$repo/hooks');
+      final response = await http.get(url, headers: _headers);
+      _checkStatus(response, 'Không lấy được danh sách webhook');
+      final List data = jsonDecode(response.body);
+      return data.map((e) => GithubWebhook.fromJson(e)).toList();
+    });
+  }
+
+  /// Tạo webhook mới, mặc định lắng nghe sự kiện "push". [secret] (nếu có)
+  /// dùng để GitHub ký chữ ký HMAC vào mỗi request gửi tới [targetUrl], giúp
+  /// server nhận xác thực request đúng là từ GitHub gửi tới.
+  Future<void> createWebhook(
+    String owner,
+    String repo,
+    String targetUrl, {
+    List<String> events = const ['push'],
+    String? secret,
+  }) async {
+    final url = Uri.https('api.github.com', '/repos/$owner/$repo/hooks');
+    final response = await http.post(
+      url,
+      headers: {..._headers, 'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'name': 'web',
+        'active': true,
+        'events': events,
+        'config': {
+          'url': targetUrl,
+          'content_type': 'json',
+          if (secret != null && secret.isNotEmpty) 'secret': secret,
+        },
+      }),
+    );
+    _checkStatus(response, 'Tạo webhook thất bại');
+  }
+
+  Future<void> deleteWebhook(String owner, String repo, int hookId) async {
+    final url = Uri.https('api.github.com', '/repos/$owner/$repo/hooks/$hookId');
+    final response = await http.delete(url, headers: _headers);
+    _checkStatus(response, 'Xoá webhook thất bại');
+  }
+
+  Future<void> toggleWebhookActive(String owner, String repo, int hookId, bool active) async {
+    final url = Uri.https('api.github.com', '/repos/$owner/$repo/hooks/$hookId');
+    final response = await http.patch(
+      url,
+      headers: {..._headers, 'Content-Type': 'application/json'},
+      body: jsonEncode({'active': active}),
+    );
+    _checkStatus(response, 'Cập nhật webhook thất bại');
+  }
+
+  // ================== #11: Tìm kiếm code toàn GitHub ==================
+
+  /// Tìm kiếm code TOÀN GITHUB (không giới hạn 1 repo) qua Search API.
+  /// [query] có thể dùng qualifier y hệt cú pháp tìm kiếm trên github.com,
+  /// ví dụ "TODO language:dart", "useState repo:facebook/react", "user:torvalds".
+  /// GitHub giới hạn RẤT chặt: 10 request/phút với token cá nhân thường - UI
+  /// gọi hàm này nên debounce (đợi người dùng gõ xong) chứ không gọi theo mỗi
+  /// ký tự, và nên hiển thị rõ lỗi 403 (vượt giới hạn) thay vì lỗi chung chung.
+  Future<List<CodeSearchResult>> searchCodeGlobal(String query, {int page = 1}) async {
+    return _withRetry(() async {
+      final url = Uri.https('api.github.com', '/search/code', {
+        'q': query,
+        'per_page': '30',
+        'page': '$page',
+      });
+      final response = await http.get(url, headers: _headers);
+      if (response.statusCode == 403) {
+        throw Exception('Đã vượt giới hạn tìm kiếm của GitHub (10 lần/phút). Đợi 1 chút rồi thử lại.');
+      }
+      if (response.statusCode == 422) {
+        throw Exception('Cú pháp tìm kiếm không hợp lệ. Ví dụ: "TODO language:dart" hoặc "useState repo:facebook/react".');
+      }
+      _checkStatus(response, 'Tìm kiếm code thất bại');
+      final data = jsonDecode(response.body);
+      final List items = data['items'] ?? [];
+      return items.map((e) => CodeSearchResult.fromJson(e)).toList();
+    });
   }
 }

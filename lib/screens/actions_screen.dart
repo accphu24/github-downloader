@@ -58,12 +58,99 @@ class _ActionsScreenState extends State<ActionsScreen> {
     }
   }
 
+  /// Mở khay chọn workflow + branch để kích hoạt chạy 1 workflow thủ công
+  /// (chỉ hoạt động với workflow có khai báo trigger `workflow_dispatch`).
+  Future<void> _showDispatchSheet() async {
+    List<GithubWorkflow> workflows;
+    List<String> branches;
+    try {
+      final results = await Future.wait([
+        widget.githubService.listWorkflows(widget.owner, widget.repo),
+        widget.githubService.listBranches(widget.owner, widget.repo),
+      ]);
+      workflows = results[0] as List<GithubWorkflow>;
+      branches = results[1] as List<String>;
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+      return;
+    }
+
+    final activeWorkflows = workflows.where((w) => w.state == 'active').toList();
+    if (activeWorkflows.isEmpty) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t('actions.no_dispatchable_workflow'))));
+      return;
+    }
+    if (!mounted) return;
+
+    GithubWorkflow selectedWorkflow = activeWorkflows.first;
+    String selectedBranch = branches.isNotEmpty ? branches.first : 'main';
+
+    final confirmed = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) => Padding(
+          padding: EdgeInsets.only(left: 20, right: 20, top: 20, bottom: MediaQuery.of(ctx).viewInsets.bottom + 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(t('actions.run_workflow_title'), style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 18)),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<GithubWorkflow>(
+                value: selectedWorkflow,
+                decoration: InputDecoration(labelText: t('actions.workflow_label'), border: const OutlineInputBorder()),
+                items: activeWorkflows
+                    .map((w) => DropdownMenuItem(value: w, child: Text(w.name, overflow: TextOverflow.ellipsis)))
+                    .toList(),
+                onChanged: (w) => setSheetState(() => selectedWorkflow = w ?? selectedWorkflow),
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                value: selectedBranch,
+                decoration: InputDecoration(labelText: t('actions.branch_label'), border: const OutlineInputBorder()),
+                items: branches.map((b) => DropdownMenuItem(value: b, child: Text(b, overflow: TextOverflow.ellipsis))).toList(),
+                onChanged: (b) => setSheetState(() => selectedBranch = b ?? selectedBranch),
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  icon: const Icon(Icons.play_arrow_rounded),
+                  label: Text(t('actions.run_workflow_button')),
+                  onPressed: () => Navigator.pop(ctx, true),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+    try {
+      await widget.githubService.dispatchWorkflow(widget.owner, widget.repo, selectedWorkflow.id, ref: selectedBranch);
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t('actions.dispatch_success'))));
+      // GitHub cần vài giây để tạo run mới trong danh sách, đợi rồi mới refresh.
+      await Future.delayed(const Duration(seconds: 3));
+      if (mounted) _load();
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
       appBar: AppBar(title: Text(t('actions.title', {'owner': widget.owner, 'repo': widget.repo}))),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _showDispatchSheet,
+        icon: const Icon(Icons.play_arrow_rounded),
+        label: Text(t('actions.run_workflow_button')),
+      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null

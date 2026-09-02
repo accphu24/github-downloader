@@ -10,6 +10,8 @@ import '../main.dart' show navigatorKey;
 import 'login_screen.dart';
 import 'actions_screen.dart';
 import 'commits_screen.dart';
+import 'repo_admin_screen.dart';
+import 'code_search_screen.dart';
 import '../widgets/file_editor_sheet.dart';
 
 const int _bigFolderWarningThreshold = 200;
@@ -329,8 +331,154 @@ class _BrowserScreenState extends State<BrowserScreen> {
     );
   }
 
-  Future<void> _handleFolderLongPress(GithubFile folder) =>
-      _downloadAsZip(path: folder.path, displayName: folder.name);
+  /// Menu hành động khi nhấn giữ 1 dòng file/thư mục: tải xuống, xem/sửa,
+  /// và (mới) xoá khỏi repo.
+  Future<void> _showEntryActionsSheet(GithubFile entry, {required bool isDir}) async {
+    final scheme = Theme.of(context).colorScheme;
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 12),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Text(entry.name, style: const TextStyle(fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis),
+            ),
+            const SizedBox(height: 4),
+            if (isDir)
+              ListTile(
+                leading: const Icon(Icons.archive_rounded),
+                title: Text(t('browser.action_download_zip')),
+                onTap: () => Navigator.pop(ctx, 'zip'),
+              )
+            else ...[
+              if (isPreviewable(entry.name))
+                ListTile(
+                  leading: const Icon(Icons.edit_rounded),
+                  title: Text(t('browser.action_preview_edit')),
+                  onTap: () => Navigator.pop(ctx, 'preview'),
+                ),
+              ListTile(
+                leading: const Icon(Icons.download_rounded),
+                title: Text(t('browser.action_download')),
+                onTap: () => Navigator.pop(ctx, 'download'),
+              ),
+            ],
+            ListTile(
+              leading: Icon(Icons.delete_rounded, color: scheme.error),
+              title: Text(
+                isDir ? t('browser.action_delete_folder') : t('browser.action_delete_file'),
+                style: TextStyle(color: scheme.error),
+              ),
+              onTap: () => Navigator.pop(ctx, 'delete'),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+
+    if (!mounted || action == null) return;
+    switch (action) {
+      case 'zip':
+        await _downloadAsZip(path: entry.path, displayName: entry.name);
+        break;
+      case 'preview':
+        await _previewFile(entry);
+        break;
+      case 'download':
+        _downloadFile(entry);
+        break;
+      case 'delete':
+        if (isDir) {
+          await _confirmDeleteFolder(entry);
+        } else {
+          await _confirmDeleteFile(entry);
+        }
+        break;
+    }
+  }
+
+  /// Xoá 1 file (sau khi xác nhận), tạo 1 commit xoá trên GitHub.
+  Future<void> _confirmDeleteFile(GithubFile file) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(t('browser.delete_file_confirm_title')),
+        content: Text(t('browser.delete_file_confirm_body', {'name': file.name})),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(t('common.cancel'))),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Theme.of(ctx).colorScheme.error),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(t('browser.action_delete_file')),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+    if (file.sha == null) {
+      _showError(t('browser.delete_missing_sha'));
+      return;
+    }
+
+    setState(() => _loading = true);
+    final owner = _ownerController.text.trim();
+    final repo = _repoController.text.trim();
+    final ok = await _guard(() => _githubService!.deleteFile(owner, repo, file.path, file.sha!, branch: _currentBranch));
+    if (mounted) setState(() => _loading = false);
+    if (ok == null || !mounted) return;
+
+    showTopNotification(context, t('browser.delete_file_done', {'name': file.name}));
+    await _openFolder(_currentPath);
+  }
+
+  /// Xoá TOÀN BỘ file bên trong 1 thư mục (sau khi xác nhận + cho biết trước
+  /// số lượng file, vì mỗi file là 1 commit riêng - có thể mất một lúc nếu
+  /// thư mục có nhiều file).
+  Future<void> _confirmDeleteFolder(GithubFile folder) async {
+    setState(() => _loading = true);
+    final owner = _ownerController.text.trim();
+    final repo = _repoController.text.trim();
+    final files = await _guard(() => _githubService!.listAllFilesRecursive(owner, repo, folder.path, ref: _currentBranch));
+    if (mounted) setState(() => _loading = false);
+    if (files == null || !mounted) return;
+    if (files.isEmpty) {
+      _showError(t('browser.zip_no_files'));
+      return;
+    }
+
+    if (!mounted) return;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(t('browser.delete_folder_confirm_title')),
+        content: Text(t('browser.delete_folder_confirm_body', {'name': folder.name, 'count': files.length.toString()})),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(t('common.cancel'))),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Theme.of(ctx).colorScheme.error),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(t('browser.action_delete_folder')),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+
+    setState(() => _loading = true);
+    final ok = await _guard(() => _githubService!.deleteFolder(owner, repo, files, branch: _currentBranch));
+    if (mounted) setState(() => _loading = false);
+    if (ok == null || !mounted) return;
+
+    showTopNotification(context, t('browser.delete_folder_done', {'name': folder.name, 'count': files.length.toString()}));
+    await _openFolder(_currentPath);
+  }
 
   Future<void> _downloadWholeRepoAsZip() =>
       _downloadAsZip(path: '', displayName: _repoController.text.trim());
@@ -576,7 +724,29 @@ class _BrowserScreenState extends State<BrowserScreen> {
               tooltip: t('browser.upload_tooltip'),
               onPressed: _handleUploadFile,
             ),
+            IconButton(
+              icon: const Icon(Icons.admin_panel_settings_rounded),
+              tooltip: t('browser.admin_tooltip'),
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => RepoAdminScreen(
+                    owner: _ownerController.text.trim(),
+                    repo: _repoController.text.trim(),
+                    githubService: _githubService!,
+                  ),
+                ),
+              ),
+            ),
           ],
+          IconButton(
+            icon: const Icon(Icons.travel_explore_rounded),
+            tooltip: t('browser.global_search_tooltip'),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => CodeSearchScreen(githubService: _githubService!)),
+            ),
+          ),
           IconButton(icon: const Icon(Icons.logout_rounded), onPressed: _logout),
         ],
       ),
@@ -794,7 +964,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
                     ],
                   ),
             onTap: isDir ? () => _openFolder(file.path) : (canPreview ? () => _previewFile(file) : null),
-            onLongPress: isDir ? () => _handleFolderLongPress(file) : null,
+            onLongPress: () => _showEntryActionsSheet(file, isDir: isDir),
           ),
         );
       },
