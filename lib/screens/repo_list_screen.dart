@@ -7,6 +7,7 @@ import 'browser_screen.dart';
 import 'login_screen.dart';
 import 'settings_screen.dart';
 import 'notifications_screen.dart';
+import 'gists_screen.dart';
 import '../services/ci_watch_service.dart';
 
 /// Cache đơn giản trong bộ nhớ, tồn tại trong suốt phiên chạy app.
@@ -186,6 +187,70 @@ class _RepoListScreenState extends State<RepoListScreen> {
 
   void _openManualEntry() {
     Navigator.push(context, MaterialPageRoute(builder: (_) => const BrowserScreen()));
+  }
+
+  void _openGists() {
+    Navigator.push(context, MaterialPageRoute(builder: (_) => GistsScreen(githubService: _githubService!)));
+  }
+
+  /// Mở dialog tạo repo mới cho tài khoản cá nhân, rồi mở luôn repo vừa tạo
+  /// trong BrowserScreen.
+  Future<void> _showCreateRepoDialog() async {
+    final nameController = TextEditingController();
+    final descController = TextEditingController();
+    bool private = true;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Text(t('repolist.create_repo_title')),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameController,
+                decoration: InputDecoration(labelText: t('repolist.repo_name_label'), border: const OutlineInputBorder()),
+                autofocus: true,
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: descController,
+                decoration: InputDecoration(labelText: t('repolist.repo_desc_label'), border: const OutlineInputBorder()),
+              ),
+              const SizedBox(height: 8),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(t('repolist.repo_private_label')),
+                value: private,
+                onChanged: (v) => setDialogState(() => private = v),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(t('common.cancel'))),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(t('repolist.create_repo_button'))),
+          ],
+        ),
+      ),
+    );
+
+    final name = nameController.text.trim();
+    if (confirmed != true || name.isEmpty || !mounted) return;
+
+    try {
+      final repo = await _githubService!.createRepo(name, description: descController.text.trim(), private: private);
+      if (mounted) {
+        _RepoCache.repos = null; // ép danh sách repo tải lại từ đầu ở lần quay về màn này
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => BrowserScreen(initialOwner: repo.owner, initialRepo: repo.name)),
+        );
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+    }
   }
 
   void _openSettings() {
@@ -380,10 +445,16 @@ class _RepoListScreenState extends State<RepoListScreen> {
             child: IconButton(icon: const Icon(Icons.notifications_rounded), tooltip: t('notif.tooltip'), onPressed: _openNotifications),
           ),
           IconButton(icon: const Icon(Icons.edit_rounded), tooltip: t('repolist.manual_entry_tooltip'), onPressed: _openManualEntry),
+          IconButton(icon: const Icon(Icons.code_rounded), tooltip: t('repolist.gists_tooltip'), onPressed: _openGists),
           IconButton(icon: const Icon(Icons.refresh_rounded), onPressed: () => _loadRepos()),
           IconButton(icon: const Icon(Icons.settings_rounded), tooltip: t('repolist.settings_tooltip'), onPressed: _openSettings),
           IconButton(icon: const Icon(Icons.logout_rounded), onPressed: _logout),
         ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _showCreateRepoDialog,
+        icon: const Icon(Icons.add_rounded),
+        label: Text(t('repolist.create_repo_button')),
       ),
       body: Column(
         children: [

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../services/github_service.dart';
 import '../l10n/strings.dart';
 import '../widgets/top_notification.dart';
+import 'user_profile_screen.dart';
 
 /// Màn hình quản lý phần "admin" của repo: ai có quyền truy cập (collaborators)
 /// và webhook đang cấu hình. Chỉ nên điều hướng tới màn này khi
@@ -25,18 +26,27 @@ class _RepoAdminScreenState extends State<RepoAdminScreen> with SingleTickerProv
   bool _loading = true;
   String? _error;
 
+  // ---- Tab "Cài đặt" ----
+  final _descController = TextEditingController();
+  final _topicsController = TextEditingController();
+  bool _private = true;
+  bool _settingsLoaded = false;
+
   static const _permissions = ['pull', 'triage', 'push', 'maintain', 'admin'];
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
+    _tabController.addListener(() => setState(() {})); // để FAB đổi theo tab đang chọn
     _load();
   }
 
   @override
   void dispose() {
     _tabController.dispose();
+    _descController.dispose();
+    _topicsController.dispose();
     super.dispose();
   }
 
@@ -49,10 +59,17 @@ class _RepoAdminScreenState extends State<RepoAdminScreen> with SingleTickerProv
       final results = await Future.wait([
         widget.githubService.listCollaborators(widget.owner, widget.repo),
         widget.githubService.listWebhooks(widget.owner, widget.repo),
+        widget.githubService.getRepoTopics(widget.owner, widget.repo),
+        widget.githubService.getRepoDetails(widget.owner, widget.repo),
       ]);
       setState(() {
         _collaborators = results[0] as List<Collaborator>;
         _webhooks = results[1] as List<GithubWebhook>;
+        _topicsController.text = (results[2] as List<String>).join(', ');
+        final details = results[3] as GithubRepo;
+        _descController.text = details.description ?? '';
+        _private = details.private;
+        _settingsLoaded = true;
       });
     } catch (e) {
       setState(() => _error = e.toString());
@@ -219,6 +236,65 @@ class _RepoAdminScreenState extends State<RepoAdminScreen> with SingleTickerProv
     }
   }
 
+  // ---------------- Cài đặt repo (mô tả/visibility/topics/xoá) ----------------
+
+  Future<void> _saveSettings() async {
+    final topics = _topicsController.text.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+    try {
+      await Future.wait([
+        widget.githubService.updateRepoSettings(widget.owner, widget.repo, description: _descController.text.trim(), private: _private),
+        widget.githubService.setRepoTopics(widget.owner, widget.repo, topics),
+      ]);
+      if (mounted) showTopNotification(context, t('admin.settings_saved'));
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+    }
+  }
+
+  /// Xoá HẲN repo - yêu cầu gõ đúng tên repo để xác nhận, tránh bấm nhầm vì
+  /// đây là hành động không thể hoàn tác.
+  Future<void> _confirmDeleteRepo() async {
+    final controller = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(t('admin.delete_repo_title')),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(t('admin.delete_repo_warning', {'repo': widget.repo})),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              decoration: InputDecoration(labelText: t('admin.delete_repo_type_name', {'repo': widget.repo}), border: const OutlineInputBorder()),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(t('common.cancel'))),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Theme.of(ctx).colorScheme.error),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(t('admin.delete_repo_button')),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || controller.text.trim() != widget.repo || !mounted) return;
+
+    try {
+      await widget.githubService.deleteRepo(widget.owner, widget.repo);
+      if (mounted) {
+        showTopNotification(context, t('admin.delete_repo_success', {'repo': widget.repo}));
+        Navigator.of(context).popUntil((route) => route.isFirst);
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -231,13 +307,16 @@ class _RepoAdminScreenState extends State<RepoAdminScreen> with SingleTickerProv
           tabs: [
             Tab(text: t('admin.tab_collaborators')),
             Tab(text: t('admin.tab_webhooks')),
+            Tab(text: t('admin.tab_settings')),
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _tabController.index == 0 ? _showAddCollaboratorDialog() : _showAddWebhookDialog(),
-        child: const Icon(Icons.add_rounded),
-      ),
+      floatingActionButton: _tabController.index == 2
+          ? null
+          : FloatingActionButton(
+              onPressed: () => _tabController.index == 0 ? _showAddCollaboratorDialog() : _showAddWebhookDialog(),
+              child: const Icon(Icons.add_rounded),
+            ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
@@ -280,6 +359,10 @@ class _RepoAdminScreenState extends State<RepoAdminScreen> with SingleTickerProv
                                       tooltip: t('admin.remove_button'),
                                       onPressed: () => _confirmRemoveCollaborator(c),
                                     ),
+                                    onTap: () => Navigator.push(
+                                      context,
+                                      MaterialPageRoute(builder: (_) => UserProfileScreen(username: c.login, githubService: widget.githubService)),
+                                    ),
                                   ),
                                 );
                               },
@@ -320,6 +403,51 @@ class _RepoAdminScreenState extends State<RepoAdminScreen> with SingleTickerProv
                                 );
                               },
                             ),
+                          ),
+                    // ---- Tab cài đặt ----
+                    !_settingsLoaded
+                        ? const Center(child: CircularProgressIndicator())
+                        : ListView(
+                            padding: const EdgeInsets.all(20),
+                            children: [
+                              TextField(
+                                controller: _descController,
+                                decoration: InputDecoration(labelText: t('admin.description_label'), border: const OutlineInputBorder()),
+                                maxLines: 2,
+                              ),
+                              const SizedBox(height: 16),
+                              SwitchListTile(
+                                contentPadding: EdgeInsets.zero,
+                                title: Text(t('admin.private_label')),
+                                subtitle: Text(t('admin.private_hint')),
+                                value: _private,
+                                onChanged: (v) => setState(() => _private = v),
+                              ),
+                              const SizedBox(height: 8),
+                              TextField(
+                                controller: _topicsController,
+                                decoration: InputDecoration(labelText: t('admin.topics_label'), border: const OutlineInputBorder()),
+                              ),
+                              const SizedBox(height: 20),
+                              FilledButton.icon(
+                                onPressed: _saveSettings,
+                                icon: const Icon(Icons.save_rounded),
+                                label: Text(t('common.save')),
+                              ),
+                              const SizedBox(height: 32),
+                              Divider(color: scheme.error.withValues(alpha: 0.3)),
+                              const SizedBox(height: 12),
+                              Text(t('admin.danger_zone'), style: TextStyle(fontWeight: FontWeight.w700, color: scheme.error)),
+                              const SizedBox(height: 8),
+                              Text(t('admin.delete_repo_hint'), style: TextStyle(color: scheme.outline, fontSize: 13)),
+                              const SizedBox(height: 12),
+                              OutlinedButton.icon(
+                                onPressed: _confirmDeleteRepo,
+                                style: OutlinedButton.styleFrom(foregroundColor: scheme.error, side: BorderSide(color: scheme.error)),
+                                icon: const Icon(Icons.delete_forever_rounded),
+                                label: Text(t('admin.delete_repo_button')),
+                              ),
+                            ],
                           ),
                   ],
                 ),

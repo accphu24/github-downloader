@@ -55,6 +55,12 @@ const _vi = <String, String>{
   'repolist.filter_mine': 'Của tôi',
   'repolist.filter_all': 'Tất cả',
   'repolist.section_pinned': 'Đã ghim',
+  'repolist.gists_tooltip': 'Gist của tôi & tìm hồ sơ người dùng',
+  'repolist.create_repo_button': 'Tạo repo mới',
+  'repolist.create_repo_title': 'Tạo repo mới',
+  'repolist.repo_name_label': 'Tên repo',
+  'repolist.repo_desc_label': 'Mô tả (không bắt buộc)',
+  'repolist.repo_private_label': 'Repo riêng tư (private)',
 
   // Duyệt file
   'browser.title_named': 'Xin chào, {username}',
@@ -271,6 +277,43 @@ const _vi = <String, String>{
   'codesearch.hint': 'Tìm code trên toàn GitHub...',
   'codesearch.hint_qualifiers': 'Nhập từ khoá để tìm code trên toàn GitHub.\nCó thể dùng qualifier như "language:dart", "repo:owner/name", "user:tên".',
   'codesearch.no_results': 'Không tìm thấy kết quả nào.',
+
+  // Cài đặt repo: mô tả/visibility/topics/xoá (mảng #6)
+  'admin.tab_settings': 'Cài đặt',
+  'admin.description_label': 'Mô tả repo',
+  'admin.private_label': 'Repo riêng tư (private)',
+  'admin.private_hint': 'Tắt để chuyển repo sang công khai (public).',
+  'admin.topics_label': 'Topics (ngăn cách bởi dấu phẩy)',
+  'admin.settings_saved': 'Đã lưu cài đặt.',
+  'admin.danger_zone': 'Khu vực nguy hiểm',
+  'admin.delete_repo_hint': 'Xoá repo là hành động VĨNH VIỄN, không thể hoàn tác, kể cả toàn bộ issues, PR, wiki bên trong.',
+  'admin.delete_repo_button': 'Xoá repo vĩnh viễn',
+  'admin.delete_repo_title': 'Xoá repo?',
+  'admin.delete_repo_warning': 'Bạn sắp xoá VĨNH VIỄN repo "{repo}" cùng toàn bộ nội dung bên trong. Không thể hoàn tác.',
+  'admin.delete_repo_type_name': 'Gõ "{repo}" để xác nhận',
+  'admin.delete_repo_success': 'Đã xoá repo "{repo}".',
+
+  // Gists (mảng #12)
+  'gists.title': 'Gist của tôi',
+  'gists.empty': 'Bạn chưa có gist nào.',
+  'gists.find_profile_hint': 'Tìm hồ sơ theo username GitHub...',
+  'gists.create_title': 'Tạo gist mới',
+  'gists.filename_label': 'Tên file',
+  'gists.description_label': 'Mô tả (không bắt buộc)',
+  'gists.content_label': 'Nội dung',
+  'gists.public_label': 'Công khai (public)',
+  'gists.create_button': 'Tạo',
+  'gists.create_success': 'Đã tạo gist mới.',
+  'gists.delete_confirm': 'Xoá gist này?',
+  'gists.delete_success': 'Đã xoá gist.',
+
+  // Hồ sơ người dùng khác (mảng #12)
+  'profile.repos': 'Repo',
+  'profile.followers': 'Followers',
+  'profile.following': 'Following',
+  'profile.follow': 'Theo dõi',
+  'profile.unfollow': 'Đang theo dõi',
+  'profile.open_on_github': 'Mở trên GitHub',
 };
 
 const _en = <String, String>{
@@ -313,6 +356,12 @@ const _en = <String, String>{
   'repolist.filter_mine': 'Mine',
   'repolist.filter_all': 'All',
   'repolist.section_pinned': 'Pinned',
+  'repolist.gists_tooltip': 'My gists & find user profile',
+  'repolist.create_repo_button': 'Create new repo',
+  'repolist.create_repo_title': 'Create new repo',
+  'repolist.repo_name_label': 'Repo name',
+  'repolist.repo_desc_label': 'Description (optional)',
+  'repolist.repo_private_label': 'Private repo',
 
   'browser.title_named': 'Hi, {username}',
   'browser.title_generic': 'Browse repo',
@@ -523,4 +572,41 @@ const _en = <String, String>{
   'codesearch.hint': 'Search code across GitHub...',
   'codesearch.hint_qualifiers': 'Enter a keyword to search code across all of GitHub.\nYou can use qualifiers like "language:dart", "repo:owner/name", "user:name".',
   'codesearch.no_results': 'No results found.',
+
+  // Repo settings: description/visibility/topics/delete (area #6)
+  'admin.tab_settings': 'Settings',
+  'admin.description_label': 'Repo description',
+  'admin.private_label': 'Private repo',
+  'admin.private_hint': 'Turn off to make the repo public.',
+  'admin.topics_label': 'Topics (comma-separated)',
+  'admin.settings_saved': 'Settings saved.',
+  'admin.danger_zone': 'Danger zone',
+  'admin.delete_repo_hint': 'Deleting a repo is PERMANENT and cannot be undone, including all issues, PRs, and wiki content inside it.',
+  'admin.delete_repo_button': 'Delete repo permanently',
+  'admin.delete_repo_title': 'Delete repo?',
+  'admin.delete_repo_warning': 'You are about to PERMANENTLY delete "{repo}" and everything inside it. This cannot be undone.',
+  'admin.delete_repo_type_name': 'Type "{repo}" to confirm',
+  'admin.delete_repo_success': 'Deleted repo "{repo}".',
+
+  // Gists (area #12)
+  'gists.title': 'My Gists',
+  'gists.empty': 'You have no gists yet.',
+  'gists.find_profile_hint': 'Find a profile by GitHub username...',
+  'gists.create_title': 'Create new gist',
+  'gists.filename_label': 'File name',
+  'gists.description_label': 'Description (optional)',
+  'gists.content_label': 'Content',
+  'gists.public_label': 'Public',
+  'gists.create_button': 'Create',
+  'gists.create_success': 'Gist created.',
+  'gists.delete_confirm': 'Delete this gist?',
+  'gists.delete_success': 'Gist deleted.',
+
+  // Other user's profile (area #12)
+  'profile.repos': 'Repos',
+  'profile.followers': 'Followers',
+  'profile.following': 'Following',
+  'profile.follow': 'Follow',
+  'profile.unfollow': 'Following',
+  'profile.open_on_github': 'Open on GitHub',
 };

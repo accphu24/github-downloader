@@ -386,6 +386,71 @@ class CodeSearchResult {
       );
 }
 
+/// 1 gist (đoạn code snippet chia sẻ được, có thể public hoặc bí mật).
+class GithubGist {
+  final String id;
+  final String? description;
+  final bool public;
+  final String htmlUrl;
+  final List<String> fileNames;
+  final DateTime updatedAt;
+
+  GithubGist({
+    required this.id,
+    required this.public,
+    required this.htmlUrl,
+    required this.fileNames,
+    required this.updatedAt,
+    this.description,
+  });
+
+  factory GithubGist.fromJson(Map<String, dynamic> json) {
+    final filesMap = json['files'] as Map<String, dynamic>? ?? {};
+    return GithubGist(
+      id: json['id'] ?? '',
+      description: json['description'],
+      public: json['public'] ?? false,
+      htmlUrl: json['html_url'] ?? '',
+      fileNames: filesMap.keys.map((e) => e.toString()).toList(),
+      updatedAt: DateTime.parse(json['updated_at'] ?? DateTime.now().toIso8601String()),
+    );
+  }
+}
+
+/// Thông tin công khai của 1 tài khoản GitHub (dùng khi xem hồ sơ người khác).
+class GithubUserProfile {
+  final String login;
+  final String? name;
+  final String? bio;
+  final String avatarUrl;
+  final int followers;
+  final int following;
+  final int publicRepos;
+  final String htmlUrl;
+
+  GithubUserProfile({
+    required this.login,
+    required this.avatarUrl,
+    required this.followers,
+    required this.following,
+    required this.publicRepos,
+    required this.htmlUrl,
+    this.name,
+    this.bio,
+  });
+
+  factory GithubUserProfile.fromJson(Map<String, dynamic> json) => GithubUserProfile(
+        login: json['login'] ?? '',
+        name: json['name'],
+        bio: json['bio'],
+        avatarUrl: json['avatar_url'] ?? '',
+        followers: json['followers'] ?? 0,
+        following: json['following'] ?? 0,
+        publicRepos: json['public_repos'] ?? 0,
+        htmlUrl: json['html_url'] ?? '',
+      );
+}
+
 class GithubService {
   final String? token;
   GithubService({this.token});
@@ -502,6 +567,15 @@ class GithubService {
     _checkStatus(response, 'Không lấy được thông tin repo');
     final data = jsonDecode(response.body);
     return data['default_branch'] ?? 'main';
+  }
+
+  /// Lấy đầy đủ thông tin của 1 repo (mô tả, private/public, quyền hạn...),
+  /// dùng cho màn cài đặt repo - khác getDefaultBranch() chỉ lấy đúng 1 field.
+  Future<GithubRepo> getRepoDetails(String owner, String repo) async {
+    final url = Uri.https('api.github.com', '/repos/$owner/$repo');
+    final response = await http.get(url, headers: _headers);
+    _checkStatus(response, 'Không lấy được thông tin repo');
+    return GithubRepo.fromJson(jsonDecode(response.body));
   }
 
   /// Lấy danh sách tên các branch của repo.
@@ -1057,5 +1131,157 @@ class GithubService {
       final List items = data['items'] ?? [];
       return items.map((e) => CodeSearchResult.fromJson(e)).toList();
     });
+  }
+
+  // ================== #6: Tạo/xoá repo, đổi cài đặt ==================
+
+  /// Tạo repo mới cho TÀI KHOẢN CÁ NHÂN đang đăng nhập (không hỗ trợ tạo
+  /// trong tổ chức - GitHub cần endpoint khác cho việc đó).
+  Future<GithubRepo> createRepo(String name, {String? description, bool private = true}) async {
+    final url = Uri.https('api.github.com', '/user/repos');
+    final response = await http.post(
+      url,
+      headers: {..._headers, 'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'name': name,
+        'private': private,
+        if (description != null && description.isNotEmpty) 'description': description,
+      }),
+    );
+    if (response.statusCode == 422) {
+      throw Exception('Không tạo được repo (422) - có thể đã tồn tại repo cùng tên.');
+    }
+    _checkStatus(response, 'Tạo repo thất bại');
+    return GithubRepo.fromJson(jsonDecode(response.body));
+  }
+
+  /// Xoá HẲN 1 repo - hành động không thể hoàn tác. Cần token có scope
+  /// `delete_repo` (khác với scope `repo` thông thường) - nếu tài khoản đăng
+  /// nhập từ trước khi app xin thêm scope này, GitHub sẽ trả 403 và cần đăng
+  /// nhập lại để cấp thêm quyền.
+  Future<void> deleteRepo(String owner, String repo) async {
+    final url = Uri.https('api.github.com', '/repos/$owner/$repo');
+    final response = await http.delete(url, headers: _headers);
+    if (response.statusCode == 403) {
+      throw Exception('Không có quyền xoá repo (403) - hãy đăng xuất rồi đăng nhập lại để cấp thêm quyền "delete_repo".');
+    }
+    _checkStatus(response, 'Xoá repo thất bại');
+  }
+
+  /// Cập nhật cài đặt cơ bản của repo: mô tả, công khai/riêng tư, đổi tên.
+  Future<void> updateRepoSettings(
+    String owner,
+    String repo, {
+    String? description,
+    bool? private,
+    String? newName,
+  }) async {
+    final url = Uri.https('api.github.com', '/repos/$owner/$repo');
+    final response = await http.patch(
+      url,
+      headers: {..._headers, 'Content-Type': 'application/json'},
+      body: jsonEncode({
+        if (description != null) 'description': description,
+        if (private != null) 'private': private,
+        if (newName != null && newName.isNotEmpty) 'name': newName,
+      }),
+    );
+    _checkStatus(response, 'Cập nhật cài đặt repo thất bại');
+  }
+
+  /// Lấy danh sách topic (thẻ gắn cho repo) hiện có.
+  Future<List<String>> getRepoTopics(String owner, String repo) async {
+    final url = Uri.https('api.github.com', '/repos/$owner/$repo/topics');
+    final response = await http.get(url, headers: {..._headers, 'Accept': 'application/vnd.github.mercy-preview+json'});
+    _checkStatus(response, 'Không lấy được topic');
+    final data = jsonDecode(response.body);
+    final List names = data['names'] ?? [];
+    return names.map((e) => e.toString()).toList();
+  }
+
+  /// Ghi đè TOÀN BỘ danh sách topic của repo (không phải thêm/bớt riêng lẻ).
+  Future<void> setRepoTopics(String owner, String repo, List<String> topics) async {
+    final url = Uri.https('api.github.com', '/repos/$owner/$repo/topics');
+    final response = await http.put(
+      url,
+      headers: {..._headers, 'Content-Type': 'application/json', 'Accept': 'application/vnd.github.mercy-preview+json'},
+      body: jsonEncode({'names': topics}),
+    );
+    _checkStatus(response, 'Cập nhật topic thất bại');
+  }
+
+  // ================== #12: Gists, hồ sơ người dùng, follow ==================
+
+  /// Liệt kê gist của TÀI KHOẢN ĐANG ĐĂNG NHẬP (cả public lẫn secret).
+  Future<List<GithubGist>> listMyGists() async {
+    return _withRetry(() async {
+      final url = Uri.https('api.github.com', '/gists', {'per_page': '50'});
+      final response = await http.get(url, headers: _headers);
+      _checkStatus(response, 'Không lấy được danh sách gist');
+      final List data = jsonDecode(response.body);
+      return data.map((e) => GithubGist.fromJson(e)).toList();
+    });
+  }
+
+  /// Tạo gist mới. [files] là map tên file -> nội dung, ví dụ
+  /// {'hello.dart': 'void main() {}'} - GitHub yêu cầu ít nhất 1 file.
+  Future<GithubGist> createGist(Map<String, String> files, {String? description, bool public = false}) async {
+    final url = Uri.https('api.github.com', '/gists');
+    final response = await http.post(
+      url,
+      headers: {..._headers, 'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'description': description ?? '',
+        'public': public,
+        'files': files.map((name, content) => MapEntry(name, {'content': content})),
+      }),
+    );
+    _checkStatus(response, 'Tạo gist thất bại');
+    return GithubGist.fromJson(jsonDecode(response.body));
+  }
+
+  Future<void> deleteGist(String gistId) async {
+    final url = Uri.https('api.github.com', '/gists/$gistId');
+    final response = await http.delete(url, headers: _headers);
+    _checkStatus(response, 'Xoá gist thất bại');
+  }
+
+  /// Lấy thông tin công khai của 1 tài khoản GitHub bất kỳ (xem hồ sơ người khác).
+  Future<GithubUserProfile> getUserProfile(String username) async {
+    return _withRetry(() async {
+      final url = Uri.https('api.github.com', '/users/$username');
+      final response = await http.get(url, headers: _headers);
+      if (response.statusCode == 404) {
+        throw Exception('Không tìm thấy tài khoản GitHub "$username".');
+      }
+      _checkStatus(response, 'Không lấy được thông tin người dùng');
+      return GithubUserProfile.fromJson(jsonDecode(response.body));
+    });
+  }
+
+  /// Kiểm tra tài khoản đang đăng nhập có đang theo dõi [username] hay không.
+  Future<bool> isFollowing(String username) async {
+    final url = Uri.https('api.github.com', '/user/following/$username');
+    final response = await http.get(url, headers: _headers);
+    if (response.statusCode == 204) return true;
+    if (response.statusCode == 404) return false;
+    _checkStatus(response, 'Không kiểm tra được trạng thái theo dõi');
+    return false;
+  }
+
+  /// Theo dõi (follow) 1 tài khoản. Cần scope `user:follow`.
+  Future<void> followUser(String username) async {
+    final url = Uri.https('api.github.com', '/user/following/$username');
+    final response = await http.put(url, headers: {..._headers, 'Content-Type': 'application/json'});
+    if (response.statusCode == 403) {
+      throw Exception('Không có quyền theo dõi (403) - hãy đăng xuất rồi đăng nhập lại để cấp thêm quyền "user:follow".');
+    }
+    _checkStatus(response, 'Theo dõi thất bại');
+  }
+
+  Future<void> unfollowUser(String username) async {
+    final url = Uri.https('api.github.com', '/user/following/$username');
+    final response = await http.delete(url, headers: _headers);
+    _checkStatus(response, 'Bỏ theo dõi thất bại');
   }
 }
