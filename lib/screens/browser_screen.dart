@@ -429,7 +429,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
     setState(() => _loading = true);
     final owner = _ownerController.text.trim();
     final repo = _repoController.text.trim();
-    final ok = await _guard(() => _githubService!.deleteFile(owner, repo, file.path, file.sha!, branch: _currentBranch));
+    final ok = await _guard(() => _githubService!.deleteFile(owner, repo, file.path, file.sha!, branch: _currentBranch).then((_) => true));
     if (mounted) setState(() => _loading = false);
     if (ok == null || !mounted) return;
 
@@ -472,7 +472,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
     if (confirm != true || !mounted) return;
 
     setState(() => _loading = true);
-    final ok = await _guard(() => _githubService!.deleteFolder(owner, repo, files, branch: _currentBranch));
+    final ok = await _guard(() => _githubService!.deleteFolder(owner, repo, files, branch: _currentBranch).then((_) => true));
     if (mounted) setState(() => _loading = false);
     if (ok == null || !mounted) return;
 
