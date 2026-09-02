@@ -61,6 +61,9 @@ const _vi = <String, String>{
   'repolist.repo_name_label': 'Tên repo',
   'repolist.repo_desc_label': 'Mô tả (không bắt buộc)',
   'repolist.repo_private_label': 'Repo riêng tư (private)',
+  'repolist.gitignore_label': 'Mẫu .gitignore',
+  'repolist.license_label': 'Giấy phép (LICENSE)',
+  'repolist.template_none': 'Không thêm',
 
   // Duyệt file
   'browser.title_named': 'Xin chào, {username}',
@@ -143,6 +146,17 @@ const _vi = <String, String>{
   'browser.delete_missing_sha': 'Thiếu thông tin file (sha), hãy làm mới danh sách rồi thử lại.',
   'browser.delete_file_done': 'Đã xoá "{name}".',
   'browser.delete_folder_done': 'Đã xoá "{name}" ({count} file).',
+
+  // Chọn nhiều file/thư mục để xoá/tải hàng loạt
+  'browser.action_select_multiple': 'Chọn nhiều mục',
+  'browser.selected_count': 'Đã chọn {count}',
+  'browser.select_all': 'Chọn tất cả',
+  'browser.deselect_all': 'Bỏ chọn tất cả',
+  'browser.download_selected': 'Tải các mục đã chọn',
+  'browser.delete_selected': 'Xoá các mục đã chọn',
+  'browser.delete_selected_confirm_title': 'Xoá các mục đã chọn?',
+  'browser.delete_selected_confirm_body': 'Bạn sắp xoá tổng cộng {count} file (mỗi file là 1 commit riêng). Không thể hoàn tác trong app.',
+  'browser.delete_selected_success': 'Đã xoá {count} file.',
 
   // Actions
   'actions.title': 'Actions · {owner}/{repo}',
@@ -385,6 +399,9 @@ const _en = <String, String>{
   'repolist.repo_name_label': 'Repo name',
   'repolist.repo_desc_label': 'Description (optional)',
   'repolist.repo_private_label': 'Private repo',
+  'repolist.gitignore_label': '.gitignore template',
+  'repolist.license_label': 'License (LICENSE)',
+  'repolist.template_none': 'Do not add',
 
   'browser.title_named': 'Hi, {username}',
   'browser.title_generic': 'Browse repo',
@@ -466,6 +483,17 @@ const _en = <String, String>{
   'browser.delete_missing_sha': 'Missing file info (sha), refresh the list and try again.',
   'browser.delete_file_done': 'Deleted "{name}".',
   'browser.delete_folder_done': 'Deleted "{name}" ({count} files).',
+
+  // Multi-select files/folders for bulk delete/download
+  'browser.action_select_multiple': 'Select multiple',
+  'browser.selected_count': '{count} selected',
+  'browser.select_all': 'Select all',
+  'browser.deselect_all': 'Deselect all',
+  'browser.download_selected': 'Download selected',
+  'browser.delete_selected': 'Delete selected',
+  'browser.delete_selected_confirm_title': 'Delete selected items?',
+  'browser.delete_selected_confirm_body': 'You are about to delete {count} files in total (each file is a separate commit). This cannot be undone in the app.',
+  'browser.delete_selected_success': 'Deleted {count} files.',
 
   'actions.title': 'Actions · {owner}/{repo}',
   'actions.empty': 'This repo hasn\'t run any workflows yet.',

@@ -18,6 +18,23 @@ import '../widgets/file_editor_sheet.dart';
 const int _bigFolderWarningThreshold = 200;
 const int _bigDateSortWarningThreshold = 50;
 
+/// Cache đơn giản trong bộ nhớ (mất khi tắt app), giúp mở lại 1 thư mục/repo
+/// đã xem trước đó HIỆN NGAY LẬP TỨC (không phải chờ loading), thay vì luôn
+/// gọi lại API GitHub. Dùng kiểu "stale-while-revalidate": hiện dữ liệu cũ
+/// ngay, đồng thời âm thầm gọi API lấy bản mới nhất để cập nhật lại phía sau.
+class _FolderCache {
+  static final Map<String, List<GithubFile>> _cache = {};
+
+  static String _key(String owner, String repo, String? branch, String path) => '$owner/$repo/${branch ?? ''}/$path';
+
+  static List<GithubFile>? get(String owner, String repo, String? branch, String path) =>
+      _cache[_key(owner, repo, branch, path)];
+
+  static void set(String owner, String repo, String? branch, String path, List<GithubFile> files) {
+    _cache[_key(owner, repo, branch, path)] = files;
+  }
+}
+
 enum SortOption { nameAsc, nameDesc, sizeAsc, sizeDesc, dateNewest, dateOldest }
 
 String _sortLabel(SortOption option) {
@@ -83,6 +100,10 @@ class _BrowserScreenState extends State<BrowserScreen> {
   final Map<String, DateTime> _fileDates = {};
   bool _loadingDates = false;
 
+  // Chế độ chọn nhiều file/thư mục (nhấn giữ 1 dòng để bật, xoá/tải hàng loạt).
+  bool _selectionMode = false;
+  final Set<String> _selectedPaths = {};
+
   @override
   void initState() {
     super.initState();
@@ -131,21 +152,32 @@ class _BrowserScreenState extends State<BrowserScreen> {
   /// Không đụng tới _currentBranch - dùng khi mở repo mới (branch đã set trước
   /// khi gọi) hoặc khi đổi branch qua _openBranchSwitcher.
   Future<void> _loadRootContents() async {
+    final owner = _ownerController.text.trim();
+    final repo = _repoController.text.trim();
+    final cached = _FolderCache.get(owner, repo, _currentBranch, '');
+
     setState(() {
-      _loading = true;
+      // Có cache -> hiện ngay, KHÔNG chớp loading spinner (trải nghiệm "mở lại
+      // tức thì"); vẫn âm thầm gọi API bên dưới để lấy bản mới nhất.
+      _loading = cached == null;
       _currentPath = '';
       _fileDates.clear();
+      if (cached != null) {
+        _files = cached;
+        _repoOpened = true;
+      }
     });
-    final files = await _guard(() => _githubService!.listContents(
-          _ownerController.text.trim(),
-          _repoController.text.trim(),
-          ref: _currentBranch,
-        ));
+    final files = await _guard(() => _githubService!.listContents(owner, repo, ref: _currentBranch));
     // files != null nghĩa là gọi API thành công (repo tồn tại, có quyền truy cập)
     // dù danh sách file trả về có thể rỗng (repo trống) - đó vẫn tính là "đã mở".
     setState(() {
-      if (files != null) _files = files;
-      _repoOpened = files != null;
+      if (files != null) {
+        _files = files;
+        _repoOpened = true;
+        _FolderCache.set(owner, repo, _currentBranch, '', files);
+      } else if (cached == null) {
+        _repoOpened = false;
+      }
     });
     setState(() => _loading = false);
   }
@@ -222,20 +254,24 @@ class _BrowserScreenState extends State<BrowserScreen> {
   }
 
   Future<void> _openFolder(String path) async {
+    final owner = _ownerController.text.trim();
+    final repo = _repoController.text.trim();
+    final cached = _FolderCache.get(owner, repo, _currentBranch, path);
+
     setState(() {
-      _loading = true;
+      _loading = cached == null;
       _fileDates.clear();
+      if (cached != null) {
+        _files = cached;
+        _currentPath = path;
+      }
     });
-    final files = await _guard(() => _githubService!.listContents(
-          _ownerController.text.trim(),
-          _repoController.text.trim(),
-          path: path,
-          ref: _currentBranch,
-        ));
+    final files = await _guard(() => _githubService!.listContents(owner, repo, path: path, ref: _currentBranch));
     if (files != null) {
       setState(() {
         _files = files;
         _currentPath = path;
+        _FolderCache.set(owner, repo, _currentBranch, path, files);
       });
     }
     setState(() => _loading = false);
@@ -249,6 +285,11 @@ class _BrowserScreenState extends State<BrowserScreen> {
     final segments = _currentPath.split('/')..removeLast();
     _openFolder(segments.join('/'));
   }
+
+  /// Kéo-để-làm-mới: bỏ qua cache, luôn gọi API lấy bản mới nhất cho đúng
+  /// thư mục đang xem (gốc hoặc thư mục con).
+  Future<void> _forceRefreshCurrentFolder() =>
+      _currentPath.isEmpty ? _loadRootContents() : _openFolder(_currentPath);
 
   void _downloadFile(GithubFile file) {
     if (file.downloadUrl == null) return;
@@ -376,6 +417,11 @@ class _BrowserScreenState extends State<BrowserScreen> {
               ),
               onTap: () => Navigator.pop(ctx, 'delete'),
             ),
+            ListTile(
+              leading: const Icon(Icons.checklist_rounded),
+              title: Text(t('browser.action_select_multiple')),
+              onTap: () => Navigator.pop(ctx, 'select'),
+            ),
             const SizedBox(height: 8),
           ],
         ),
@@ -399,6 +445,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
         } else {
           await _confirmDeleteFile(entry);
         }
+        break;
+      case 'select':
+        _enterSelectionMode(entry.path);
         break;
     }
   }
@@ -781,16 +830,22 @@ class _BrowserScreenState extends State<BrowserScreen> {
     // Đang ở trong 1 thư mục con (không phải gốc repo) -> nút back (AppBar lẫn
     // back cứng Android) chỉ nên lùi lên 1 cấp thư mục, không thoát hẳn ra khỏi
     // repo. Chỉ khi đang ở gốc mới cho phép pop thật (thoát BrowserScreen).
-    final canPopScreen = _currentPath.isEmpty;
+    // Đang ở chế độ chọn nhiều -> back chỉ thoát chế độ chọn, ưu tiên hơn cả
+    // việc lùi thư mục.
+    final canPopScreen = !_selectionMode && _currentPath.isEmpty;
 
     return PopScope(
       canPop: canPopScreen,
       onPopInvokedWithResult: (didPop, result) {
         if (didPop) return;
+        if (_selectionMode) {
+          _exitSelectionMode();
+          return;
+        }
         _navigateUpOneLevel();
       },
       child: Scaffold(
-      appBar: AppBar(
+      appBar: _selectionMode ? _buildSelectionAppBar() : AppBar(
         title: Text(_username != null ? t('browser.title_named', {'username': _username!}) : t('browser.title_generic')),
         actions: [
           if (repoIsOpen) ...[
@@ -978,17 +1033,27 @@ class _BrowserScreenState extends State<BrowserScreen> {
             ),
           if (_loading || _searchLoading || _loadingDates) const LinearProgressIndicator(),
           Expanded(
-            child: _searching
-                ? _buildSearchResults(scheme)
-                : _files.isEmpty && !_loading
-                    ? Center(
-                        child: Text(
-                          _repoOpened ? t('browser.repo_empty') : t('browser.empty_state'),
-                          textAlign: TextAlign.center,
-                          style: TextStyle(color: scheme.outline),
-                        ),
-                      )
-                    : _buildFileList(scheme),
+            child: RefreshIndicator(
+              onRefresh: _searching ? () => _runSearch(_searchController.text) : _forceRefreshCurrentFolder,
+              child: _searching
+                  ? _buildSearchResults(scheme)
+                  : _files.isEmpty && !_loading
+                      ? ListView(
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.only(top: 80),
+                              child: Center(
+                                child: Text(
+                                  _repoOpened ? t('browser.repo_empty') : t('browser.empty_state'),
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(color: scheme.outline),
+                                ),
+                              ),
+                            ),
+                          ],
+                        )
+                      : _buildFileList(scheme),
+            ),
           ),
         ],
       ),
@@ -1049,22 +1114,25 @@ class _BrowserScreenState extends State<BrowserScreen> {
         final isDir = file.type == 'dir';
         final canPreview = !isDir && isPreviewable(file.name);
         final dateStr = _fileDates.containsKey(file.path) ? _formatSizeOrDate(file) : null;
+        final selected = _selectedPaths.contains(file.path);
 
         return Card(
           margin: const EdgeInsets.symmetric(vertical: 4),
           elevation: 0,
-          color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
+          color: selected ? scheme.primaryContainer.withValues(alpha: 0.5) : scheme.surfaceContainerHighest.withValues(alpha: 0.4),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
           child: ListTile(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-            leading: CircleAvatar(
-              backgroundColor: isDir ? scheme.primaryContainer : scheme.secondaryContainer,
-              child: Icon(
-                isDir ? Icons.folder_rounded : Icons.insert_drive_file_rounded,
-                color: isDir ? scheme.onPrimaryContainer : scheme.onSecondaryContainer,
-                size: 20,
-              ),
-            ),
+            leading: _selectionMode
+                ? Checkbox(value: selected, onChanged: (_) => _toggleSelected(file.path))
+                : CircleAvatar(
+                    backgroundColor: isDir ? scheme.primaryContainer : scheme.secondaryContainer,
+                    child: Icon(
+                      isDir ? Icons.folder_rounded : Icons.insert_drive_file_rounded,
+                      color: isDir ? scheme.onPrimaryContainer : scheme.onSecondaryContainer,
+                      size: 20,
+                    ),
+                  ),
             title: Text(file.name, style: const TextStyle(fontWeight: FontWeight.w500)),
             subtitle: !isDir
                 ? Text(
@@ -1072,22 +1140,178 @@ class _BrowserScreenState extends State<BrowserScreen> {
                     style: TextStyle(fontSize: 12, color: scheme.outline),
                   )
                 : null,
-            trailing: isDir
-                ? const Icon(Icons.chevron_right_rounded)
-                : Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (canPreview)
-                        IconButton(icon: const Icon(Icons.visibility_rounded), onPressed: () => _previewFile(file)),
-                      IconButton(icon: const Icon(Icons.download_rounded), onPressed: () => _downloadFile(file)),
-                    ],
-                  ),
-            onTap: isDir ? () => _openFolder(file.path) : (canPreview ? () => _previewFile(file) : null),
-            onLongPress: () => _showEntryActionsSheet(file, isDir: isDir),
+            trailing: _selectionMode
+                ? null
+                : isDir
+                    ? const Icon(Icons.chevron_right_rounded)
+                    : Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (canPreview)
+                            IconButton(icon: const Icon(Icons.visibility_rounded), onPressed: () => _previewFile(file)),
+                          IconButton(icon: const Icon(Icons.download_rounded), onPressed: () => _downloadFile(file)),
+                        ],
+                      ),
+            onTap: _selectionMode
+                ? () => _toggleSelected(file.path)
+                : (isDir ? () => _openFolder(file.path) : (canPreview ? () => _previewFile(file) : null)),
+            onLongPress: _selectionMode ? null : () => _showEntryActionsSheet(file, isDir: isDir),
           ),
         );
       },
     );
+  }
+
+  void _enterSelectionMode(String firstSelectedPath) {
+    setState(() {
+      _selectionMode = true;
+      _selectedPaths
+        ..clear()
+        ..add(firstSelectedPath);
+    });
+  }
+
+  void _exitSelectionMode() {
+    setState(() {
+      _selectionMode = false;
+      _selectedPaths.clear();
+    });
+  }
+
+  void _toggleSelected(String path) {
+    setState(() {
+      if (_selectedPaths.contains(path)) {
+        _selectedPaths.remove(path);
+      } else {
+        _selectedPaths.add(path);
+      }
+    });
+  }
+
+  /// AppBar riêng cho chế độ chọn nhiều: đếm số đã chọn, chọn/bỏ chọn tất cả,
+  /// tải hoặc xoá hàng loạt các mục đã chọn.
+  AppBar _buildSelectionAppBar() {
+    final sorted = _sortedFiles;
+    final allSelected = sorted.isNotEmpty && _selectedPaths.length == sorted.length;
+    return AppBar(
+      leading: IconButton(icon: const Icon(Icons.close_rounded), onPressed: _exitSelectionMode),
+      title: Text(t('browser.selected_count', {'count': '${_selectedPaths.length}'})),
+      actions: [
+        IconButton(
+          icon: Icon(allSelected ? Icons.deselect_rounded : Icons.select_all_rounded),
+          tooltip: t(allSelected ? 'browser.deselect_all' : 'browser.select_all'),
+          onPressed: () => setState(() {
+            if (allSelected) {
+              _selectedPaths.clear();
+            } else {
+              _selectedPaths
+                ..clear()
+                ..addAll(sorted.map((f) => f.path));
+            }
+          }),
+        ),
+        IconButton(
+          icon: const Icon(Icons.download_rounded),
+          tooltip: t('browser.download_selected'),
+          onPressed: _selectedPaths.isEmpty ? null : _downloadSelected,
+        ),
+        IconButton(
+          icon: const Icon(Icons.delete_rounded),
+          tooltip: t('browser.delete_selected'),
+          onPressed: _selectedPaths.isEmpty ? null : _confirmDeleteSelected,
+        ),
+      ],
+    );
+  }
+
+  /// Lấy danh sách GithubFile đã chọn ở NGAY CẤP HIỆN TẠI (khớp theo path
+  /// trong _sortedFiles) - dùng làm gốc để mở rộng đệ quy khi thao tác.
+  List<GithubFile> get _selectedEntries => _sortedFiles.where((f) => _selectedPaths.contains(f.path)).toList();
+
+  /// Tải hàng loạt các mục đã chọn thành 1 file .zip. Thư mục được chọn sẽ tự
+  /// động mở rộng đệ quy lấy hết file bên trong.
+  Future<void> _downloadSelected() async {
+    final entries = _selectedEntries;
+    if (entries.isEmpty) return;
+    final owner = _ownerController.text.trim();
+    final repo = _repoController.text.trim();
+
+    setState(() => _loading = true);
+    final allFiles = <GithubFile>[];
+    for (final entry in entries) {
+      if (entry.type == 'dir') {
+        final files = await _guard(() => _githubService!.listAllFilesRecursive(owner, repo, entry.path, ref: _currentBranch));
+        if (files != null) allFiles.addAll(files);
+      } else {
+        allFiles.add(entry);
+      }
+    }
+    if (mounted) setState(() => _loading = false);
+    if (allFiles.isEmpty || !mounted) return;
+
+    final label = '${_repoController.text.trim()}-${entries.length == 1 ? entries.first.name : '${entries.length}-items'}.zip';
+    _exitSelectionMode();
+
+    DownloadManager.instance.runDownload(
+      label: label,
+      navigatorKey: navigatorKey,
+      fetch: (onProgress) => _githubService!.zipArbitraryFiles(
+        allFiles,
+        onProgress: (done, total) => onProgress(total > 0 ? done / total : null),
+      ),
+      save: (bytes) => DownloadsService.saveBytes(label, bytes),
+      onSuccess: (ctx, savedPath) => showTopNotification(ctx, t('common.saved_at', {'path': savedPath})),
+      onError: (ctx, error) => ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text(error))),
+    );
+  }
+
+  /// Xoá hàng loạt các mục đã chọn (mỗi file là 1 commit riêng - GitHub
+  /// Contents API không hỗ trợ xoá nhiều file trong 1 commit).
+  Future<void> _confirmDeleteSelected() async {
+    final entries = _selectedEntries;
+    if (entries.isEmpty) return;
+    final owner = _ownerController.text.trim();
+    final repo = _repoController.text.trim();
+
+    setState(() => _loading = true);
+    final allFiles = <GithubFile>[];
+    for (final entry in entries) {
+      if (entry.type == 'dir') {
+        final files = await _guard(() => _githubService!.listAllFilesRecursive(owner, repo, entry.path, ref: _currentBranch));
+        if (files != null) allFiles.addAll(files);
+      } else {
+        allFiles.add(entry);
+      }
+    }
+    if (mounted) setState(() => _loading = false);
+    if (allFiles.isEmpty || !mounted) return;
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(t('browser.delete_selected_confirm_title')),
+        content: Text(t('browser.delete_selected_confirm_body', {'count': allFiles.length.toString()})),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(t('common.cancel'))),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Theme.of(ctx).colorScheme.error),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(t('browser.action_delete_file')),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+
+    setState(() => _loading = true);
+    final ok = await _guard(() => _githubService!.deleteFolder(owner, repo, allFiles, branch: _currentBranch).then((_) => true));
+    if (mounted) setState(() => _loading = false);
+    if (ok == null || !mounted) return;
+
+    _exitSelectionMode();
+    showTopNotification(context, t('browser.delete_selected_success', {'count': allFiles.length.toString()}));
+    await _openFolder(_currentPath);
   }
 
   String _formatSizeOrDate(GithubFile file) {

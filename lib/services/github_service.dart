@@ -1466,4 +1466,44 @@ class GithubService {
     _checkStatus(response, 'Tải asset thất bại');
     return response.bodyBytes;
   }
+
+  /// Nén TOÀN BỘ [files] thành 1 file .zip, giữ nguyên đường dẫn đầy đủ từ gốc
+  /// repo (khác zipFiles() ở trên vốn rút gọn đường dẫn theo 1 [folderPath] cụ
+  /// thể) - dùng cho tải hàng loạt các mục ĐÃ CHỌN, có thể nằm rải rác.
+  Future<List<int>> zipArbitraryFiles(
+    List<GithubFile> files, {
+    void Function(int done, int total)? onProgress,
+  }) async {
+    final archive = Archive();
+    for (var i = 0; i < files.length; i++) {
+      final file = files[i];
+      if (file.downloadUrl == null) continue;
+      final bytes = await downloadFile(file.downloadUrl!);
+      archive.addFile(ArchiveFile(file.path, bytes.length, bytes));
+      onProgress?.call(i + 1, files.length);
+    }
+    return ZipEncoder().encode(archive) ?? [];
+  }
+
+  // ================== Template .gitignore/LICENSE khi tạo repo mới ==================
+
+  /// Lấy nội dung mẫu .gitignore theo tên (vd "Dart", "Node", "Python" - đúng
+  /// tên trong repo github/gitignore chính thức của GitHub).
+  Future<String> getGitignoreTemplate(String name) async {
+    final url = Uri.https('api.github.com', '/gitignore/templates/$name');
+    final response = await http.get(url, headers: _headers);
+    _checkStatus(response, 'Không lấy được mẫu .gitignore');
+    final data = jsonDecode(response.body);
+    return data['source'] ?? '';
+  }
+
+  /// Lấy nội dung mẫu LICENSE theo key (vd "mit", "apache-2.0" - đúng key
+  /// SPDX mà GitHub dùng).
+  Future<String> getLicenseTemplate(String key) async {
+    final url = Uri.https('api.github.com', '/licenses/$key');
+    final response = await http.get(url, headers: _headers);
+    _checkStatus(response, 'Không lấy được mẫu LICENSE');
+    final data = jsonDecode(response.body);
+    return data['body'] ?? '';
+  }
 }

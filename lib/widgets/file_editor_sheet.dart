@@ -1,7 +1,12 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:flutter_highlight/flutter_highlight.dart';
+import 'package:flutter_highlight/themes/github.dart';
+import 'package:flutter_highlight/themes/atom-one-dark.dart';
 import '../services/github_service.dart';
 import '../services/downloads_service.dart';
+import '../utils/syntax_lang.dart';
 import '../l10n/strings.dart';
 import 'top_notification.dart';
 import 'diff_preview_sheet.dart';
@@ -155,6 +160,51 @@ class _FileEditorSheetState extends State<FileEditorSheet> {
     return discard ?? false;
   }
 
+  bool get _isMarkdown {
+    final lower = widget.file.name.toLowerCase();
+    return lower.endsWith('.md') || lower.endsWith('.markdown');
+  }
+
+  /// Chế độ xem (không sửa): file Markdown -> render đẹp (bold/heading/list...);
+  /// file code có ngôn ngữ nhận diện được -> tô màu cú pháp; còn lại -> text thường.
+  Widget _buildViewer(BuildContext context, ScrollController scrollController) {
+    if (_isMarkdown) {
+      return Markdown(
+        controller: scrollController,
+        padding: const EdgeInsets.all(16),
+        data: _controller.text,
+        selectable: true,
+      );
+    }
+
+    final lang = highlightLanguageForFile(widget.file.name);
+    if (lang != null) {
+      final isDark = Theme.of(context).brightness == Brightness.dark;
+      return SingleChildScrollView(
+        controller: scrollController,
+        padding: const EdgeInsets.all(16),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: HighlightView(
+            _controller.text,
+            language: lang,
+            theme: isDark ? atomOneDarkTheme : githubTheme,
+            textStyle: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+          ),
+        ),
+      );
+    }
+
+    return SingleChildScrollView(
+      controller: scrollController,
+      padding: const EdgeInsets.all(16),
+      child: SelectableText(
+        _controller.text,
+        style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final hasChanges = _controller.text != _originalContent;
@@ -220,14 +270,7 @@ class _FileEditorSheetState extends State<FileEditorSheet> {
                                 onChanged: (_) => setState(() {}),
                               ),
                             )
-                          : SingleChildScrollView(
-                              controller: scrollController,
-                              padding: const EdgeInsets.all(16),
-                              child: SelectableText(
-                                _controller.text,
-                                style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
-                              ),
-                            ),
+                          : _buildViewer(context, scrollController),
             ),
             if (_editing && hasChanges)
               Padding(

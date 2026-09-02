@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
 import '../services/github_service.dart';
@@ -199,6 +200,28 @@ class _RepoListScreenState extends State<RepoListScreen> {
     final nameController = TextEditingController();
     final descController = TextEditingController();
     bool private = true;
+    // "" = không thêm file mẫu.
+    String gitignoreTemplate = '';
+    String licenseTemplate = '';
+
+    const gitignoreOptions = {
+      '': null,
+      'Dart': 'Dart',
+      'Flutter': 'Dart', // GitHub chưa có template riêng "Flutter", dùng chung "Dart"
+      'Node': 'Node',
+      'Python': 'Python',
+      'Java': 'Java',
+      'Go': 'Go',
+      'Rust': 'Rust',
+    };
+    const licenseOptions = {
+      '': null,
+      'MIT': 'mit',
+      'Apache 2.0': 'apache-2.0',
+      'GPL 3.0': 'gpl-3.0',
+      'BSD 3-Clause': 'bsd-3-clause',
+      'Unlicense': 'unlicense',
+    };
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -206,27 +229,47 @@ class _RepoListScreenState extends State<RepoListScreen> {
         builder: (ctx, setDialogState) => AlertDialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: Text(t('repolist.create_repo_title')),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameController,
-                decoration: InputDecoration(labelText: t('repolist.repo_name_label'), border: const OutlineInputBorder()),
-                autofocus: true,
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: descController,
-                decoration: InputDecoration(labelText: t('repolist.repo_desc_label'), border: const OutlineInputBorder()),
-              ),
-              const SizedBox(height: 8),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: Text(t('repolist.repo_private_label')),
-                value: private,
-                onChanged: (v) => setDialogState(() => private = v),
-              ),
-            ],
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nameController,
+                  decoration: InputDecoration(labelText: t('repolist.repo_name_label'), border: const OutlineInputBorder()),
+                  autofocus: true,
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: descController,
+                  decoration: InputDecoration(labelText: t('repolist.repo_desc_label'), border: const OutlineInputBorder()),
+                ),
+                const SizedBox(height: 8),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(t('repolist.repo_private_label')),
+                  value: private,
+                  onChanged: (v) => setDialogState(() => private = v),
+                ),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<String>(
+                  value: gitignoreTemplate,
+                  decoration: InputDecoration(labelText: t('repolist.gitignore_label'), border: const OutlineInputBorder()),
+                  items: gitignoreOptions.keys
+                      .map((k) => DropdownMenuItem(value: k, child: Text(k.isEmpty ? t('repolist.template_none') : k)))
+                      .toList(),
+                  onChanged: (v) => setDialogState(() => gitignoreTemplate = v ?? ''),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  value: licenseTemplate,
+                  decoration: InputDecoration(labelText: t('repolist.license_label'), border: const OutlineInputBorder()),
+                  items: licenseOptions.keys
+                      .map((k) => DropdownMenuItem(value: k, child: Text(k.isEmpty ? t('repolist.template_none') : k)))
+                      .toList(),
+                  onChanged: (v) => setDialogState(() => licenseTemplate = v ?? ''),
+                ),
+              ],
+            ),
           ),
           actions: [
             TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(t('common.cancel'))),
@@ -241,6 +284,25 @@ class _RepoListScreenState extends State<RepoListScreen> {
 
     try {
       final repo = await _githubService!.createRepo(name, description: descController.text.trim(), private: private);
+
+      // Thêm file .gitignore/LICENSE mẫu (nếu có chọn) - làm SAU khi tạo repo
+      // xong vì cần repo tồn tại trước mới upload file vào được. Lỗi ở bước
+      // này (hiếm khi xảy ra) không chặn việc mở repo vừa tạo, chỉ bỏ qua.
+      final gitignoreKey = gitignoreOptions[gitignoreTemplate];
+      if (gitignoreKey != null) {
+        try {
+          final content = await _githubService!.getGitignoreTemplate(gitignoreKey);
+          await _githubService!.uploadNewFile(repo.owner, repo.name, '.gitignore', utf8.encode(content), commitMessage: 'Add .gitignore');
+        } catch (_) {}
+      }
+      final licenseKey = licenseOptions[licenseTemplate];
+      if (licenseKey != null) {
+        try {
+          final content = await _githubService!.getLicenseTemplate(licenseKey);
+          await _githubService!.uploadNewFile(repo.owner, repo.name, 'LICENSE', utf8.encode(content), commitMessage: 'Add LICENSE');
+        } catch (_) {}
+      }
+
       if (mounted) {
         _RepoCache.repos = null; // ép danh sách repo tải lại từ đầu ở lần quay về màn này
         Navigator.push(
