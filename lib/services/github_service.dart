@@ -451,6 +451,64 @@ class GithubUserProfile {
       );
 }
 
+/// 1 asset (file đính kèm) của 1 release.
+class ReleaseAsset {
+  final int id;
+  final String name;
+  final int size;
+  final String browserDownloadUrl;
+
+  ReleaseAsset({required this.id, required this.name, required this.size, required this.browserDownloadUrl});
+
+  factory ReleaseAsset.fromJson(Map<String, dynamic> json) => ReleaseAsset(
+        id: json['id'],
+        name: json['name'] ?? '',
+        size: json['size'] ?? 0,
+        browserDownloadUrl: json['browser_download_url'] ?? '',
+      );
+}
+
+/// 1 bản release (đánh dấu mốc phát hành gắn với 1 tag), có thể kèm asset đính
+/// kèm (khác với artifact của Actions - artifact chỉ tồn tại tạm thời 90 ngày).
+class GithubRelease {
+  final int id;
+  final String tagName;
+  final String name;
+  final String? body;
+  final bool draft;
+  final bool prerelease;
+  final String htmlUrl;
+  final DateTime? publishedAt;
+  final List<ReleaseAsset> assets;
+
+  GithubRelease({
+    required this.id,
+    required this.tagName,
+    required this.name,
+    required this.draft,
+    required this.prerelease,
+    required this.htmlUrl,
+    required this.assets,
+    this.body,
+    this.publishedAt,
+  });
+
+  factory GithubRelease.fromJson(Map<String, dynamic> json) {
+    final List assetsJson = json['assets'] ?? [];
+    return GithubRelease(
+      id: json['id'],
+      tagName: json['tag_name'] ?? '',
+      name: (json['name'] as String?)?.isNotEmpty == true ? json['name'] : (json['tag_name'] ?? ''),
+      body: json['body'],
+      draft: json['draft'] ?? false,
+      prerelease: json['prerelease'] ?? false,
+      htmlUrl: json['html_url'] ?? '',
+      publishedAt: json['published_at'] != null ? DateTime.tryParse(json['published_at']) : null,
+      assets: assetsJson.map((e) => ReleaseAsset.fromJson(e)).toList(),
+    );
+  }
+}
+
 class GithubService {
   final String? token;
   GithubService({this.token});
@@ -1283,5 +1341,129 @@ class GithubService {
     final url = Uri.https('api.github.com', '/user/following/$username');
     final response = await http.delete(url, headers: _headers);
     _checkStatus(response, 'Bỏ theo dõi thất bại');
+  }
+
+  // ================== #1: Star / Watch / Fork ==================
+
+  /// Repo đang đăng nhập có đang "star" (đánh dấu sao) hay không.
+  Future<bool> isStarred(String owner, String repo) async {
+    final url = Uri.https('api.github.com', '/user/starred/$owner/$repo');
+    final response = await http.get(url, headers: _headers);
+    if (response.statusCode == 204) return true;
+    if (response.statusCode == 404) return false;
+    _checkStatus(response, 'Không kiểm tra được trạng thái star');
+    return false;
+  }
+
+  Future<void> starRepo(String owner, String repo) async {
+    final url = Uri.https('api.github.com', '/user/starred/$owner/$repo');
+    final response = await http.put(url, headers: {..._headers, 'Content-Type': 'application/json'});
+    _checkStatus(response, 'Gắn sao thất bại');
+  }
+
+  Future<void> unstarRepo(String owner, String repo) async {
+    final url = Uri.https('api.github.com', '/user/starred/$owner/$repo');
+    final response = await http.delete(url, headers: _headers);
+    _checkStatus(response, 'Bỏ sao thất bại');
+  }
+
+  /// Đang "theo dõi" (watch) repo hay chưa đặt (mặc định theo dõi khi có
+  /// hoạt động liên quan). GitHub trả 404 nếu chưa từng đặt subscription
+  /// riêng - coi như chưa bật watch chủ động.
+  Future<bool> isWatching(String owner, String repo) async {
+    final url = Uri.https('api.github.com', '/repos/$owner/$repo/subscription');
+    final response = await http.get(url, headers: _headers);
+    if (response.statusCode == 404) return false;
+    _checkStatus(response, 'Không kiểm tra được trạng thái theo dõi repo');
+    final data = jsonDecode(response.body);
+    return data['subscribed'] == true;
+  }
+
+  Future<void> watchRepo(String owner, String repo) async {
+    final url = Uri.https('api.github.com', '/repos/$owner/$repo/subscription');
+    final response = await http.put(
+      url,
+      headers: {..._headers, 'Content-Type': 'application/json'},
+      body: jsonEncode({'subscribed': true, 'ignored': false}),
+    );
+    _checkStatus(response, 'Theo dõi repo thất bại');
+  }
+
+  /// Bỏ theo dõi - xoá bản ghi subscription, trở về hành vi mặc định của GitHub.
+  Future<void> unwatchRepo(String owner, String repo) async {
+    final url = Uri.https('api.github.com', '/repos/$owner/$repo/subscription');
+    final response = await http.delete(url, headers: _headers);
+    _checkStatus(response, 'Bỏ theo dõi repo thất bại');
+  }
+
+  /// Fork repo về tài khoản cá nhân đang đăng nhập. GitHub tạo fork BẤT ĐỒNG
+  /// BỘ (trả 202 ngay nhưng repo mới có thể mất vài giây mới sẵn sàng), nên
+  /// UI nên báo "đang xử lý" thay vì coi như xong ngay lập tức.
+  Future<void> forkRepo(String owner, String repo) async {
+    final url = Uri.https('api.github.com', '/repos/$owner/$repo/forks');
+    final response = await http.post(url, headers: _headers);
+    if (response.statusCode != 202 && response.statusCode != 200) {
+      _checkStatus(response, 'Fork repo thất bại');
+    }
+  }
+
+  // ================== #2: Releases ==================
+
+  /// Liệt kê release (bao gồm cả draft/pre-release nếu tài khoản có quyền xem).
+  Future<List<GithubRelease>> listReleases(String owner, String repo) async {
+    return _withRetry(() async {
+      final url = Uri.https('api.github.com', '/repos/$owner/$repo/releases', {'per_page': '30'});
+      final response = await http.get(url, headers: _headers);
+      _checkStatus(response, 'Không lấy được danh sách release');
+      final List data = jsonDecode(response.body);
+      return data.map((e) => GithubRelease.fromJson(e)).toList();
+    });
+  }
+
+  /// Tạo release mới từ 1 tag (tag chưa tồn tại thì GitHub tự tạo luôn tại
+  /// [targetCommitish], mặc định là default branch nếu không truyền).
+  Future<void> createRelease(
+    String owner,
+    String repo, {
+    required String tagName,
+    String? name,
+    String? body,
+    bool draft = false,
+    bool prerelease = false,
+    String? targetCommitish,
+  }) async {
+    final url = Uri.https('api.github.com', '/repos/$owner/$repo/releases');
+    final response = await http.post(
+      url,
+      headers: {..._headers, 'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'tag_name': tagName,
+        if (name != null && name.isNotEmpty) 'name': name,
+        if (body != null) 'body': body,
+        'draft': draft,
+        'prerelease': prerelease,
+        if (targetCommitish != null && targetCommitish.isNotEmpty) 'target_commitish': targetCommitish,
+      }),
+    );
+    if (response.statusCode == 422) {
+      throw Exception('Không tạo được release (422) - tag "$tagName" có thể đã được dùng cho release khác.');
+    }
+    _checkStatus(response, 'Tạo release thất bại');
+  }
+
+  Future<void> deleteRelease(String owner, String repo, int releaseId) async {
+    final url = Uri.https('api.github.com', '/repos/$owner/$repo/releases/$releaseId');
+    final response = await http.delete(url, headers: _headers);
+    _checkStatus(response, 'Xoá release thất bại');
+  }
+
+  /// Tải nội dung 1 asset của release. Asset trên repo PRIVATE cần gọi qua
+  /// API kèm token (Accept: application/octet-stream), khác với file thường
+  /// tải trực tiếp qua browser_download_url (chỉ dùng được cho repo public).
+  Future<List<int>> downloadReleaseAsset(String owner, String repo, int assetId) async {
+    final url = Uri.https('api.github.com', '/repos/$owner/$repo/releases/assets/$assetId');
+    final response = await http.get(url, headers: {..._headers, 'Accept': 'application/octet-stream'});
+    _checkStatus(response, 'Tải asset thất bại');
+    return response.bodyBytes;
   }
 }

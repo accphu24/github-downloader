@@ -12,6 +12,7 @@ import 'actions_screen.dart';
 import 'commits_screen.dart';
 import 'repo_admin_screen.dart';
 import 'code_search_screen.dart';
+import 'releases_screen.dart';
 import '../widgets/file_editor_sheet.dart';
 
 const int _bigFolderWarningThreshold = 200;
@@ -659,6 +660,119 @@ class _BrowserScreenState extends State<BrowserScreen> {
     if (mounted) Navigator.of(context).popUntil((route) => route.isFirst);
   }
 
+  /// Bottom sheet "Thông tin repo": trạng thái star/watch (bật/tắt được),
+  /// fork về tài khoản cá nhân, và lối vào màn Releases.
+  Future<void> _showRepoInfoSheet() async {
+    final owner = _ownerController.text.trim();
+    final repo = _repoController.text.trim();
+
+    bool starred = false;
+    bool watching = false;
+    try {
+      final results = await Future.wait([
+        _githubService!.isStarred(owner, repo),
+        _githubService!.isWatching(owner, repo),
+      ]);
+      starred = results[0];
+      watching = results[1];
+    } catch (e) {
+      if (mounted) _showError(e.toString());
+      return;
+    }
+    if (!mounted) return;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('$owner/$repo', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+                const SizedBox(height: 16),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  secondary: Icon(starred ? Icons.star_rounded : Icons.star_outline_rounded),
+                  title: Text(t('browser.star_label')),
+                  value: starred,
+                  onChanged: (v) async {
+                    try {
+                      if (v) {
+                        await _githubService!.starRepo(owner, repo);
+                      } else {
+                        await _githubService!.unstarRepo(owner, repo);
+                      }
+                      setSheetState(() => starred = v);
+                    } catch (e) {
+                      if (mounted) _showError(e.toString());
+                    }
+                  },
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  secondary: const Icon(Icons.visibility_rounded),
+                  title: Text(t('browser.watch_label')),
+                  value: watching,
+                  onChanged: (v) async {
+                    try {
+                      if (v) {
+                        await _githubService!.watchRepo(owner, repo);
+                      } else {
+                        await _githubService!.unwatchRepo(owner, repo);
+                      }
+                      setSheetState(() => watching = v);
+                    } catch (e) {
+                      if (mounted) _showError(e.toString());
+                    }
+                  },
+                ),
+                const SizedBox(height: 8),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.call_split_rounded),
+                  title: Text(t('browser.fork_label')),
+                  subtitle: Text(t('browser.fork_hint')),
+                  onTap: () async {
+                    Navigator.pop(ctx);
+                    try {
+                      await _githubService!.forkRepo(owner, repo);
+                      if (mounted) showTopNotification(context, t('browser.fork_success'));
+                    } catch (e) {
+                      if (mounted) _showError(e.toString());
+                    }
+                  },
+                ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.sell_rounded),
+                  title: Text(t('browser.releases_label')),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ReleasesScreen(
+                          owner: owner,
+                          repo: repo,
+                          defaultBranch: _currentBranch ?? 'main',
+                          githubService: _githubService!,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -693,6 +807,11 @@ class _BrowserScreenState extends State<BrowserScreen> {
                   ),
                 ),
               ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.star_outline_rounded),
+              tooltip: t('browser.repo_info_tooltip'),
+              onPressed: _showRepoInfoSheet,
             ),
             IconButton(
               icon: const Icon(Icons.history_rounded),

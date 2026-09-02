@@ -80,6 +80,13 @@ const _vi = <String, String>{
   'browser.upload_success': 'Đã tải file lên repo thành công!',
   'browser.admin_tooltip': 'Quản lý collaborators & webhooks',
   'browser.global_search_tooltip': 'Tìm code trên toàn GitHub',
+  'browser.repo_info_tooltip': 'Star, Watch, Fork, Releases',
+  'browser.star_label': 'Gắn sao (Star)',
+  'browser.watch_label': 'Theo dõi (Watch)',
+  'browser.fork_label': 'Fork repo này',
+  'browser.fork_hint': 'Tạo 1 bản sao repo này về tài khoản của bạn',
+  'browser.fork_success': 'Đã gửi yêu cầu fork! GitHub cần vài giây để tạo xong.',
+  'browser.releases_label': 'Releases',
 
   'settings.section_backup': 'Sao lưu & khôi phục',
   'settings.backup_export': 'Xuất dữ liệu ra file',
@@ -314,6 +321,22 @@ const _vi = <String, String>{
   'profile.follow': 'Theo dõi',
   'profile.unfollow': 'Đang theo dõi',
   'profile.open_on_github': 'Mở trên GitHub',
+
+  // Releases (mảng #2)
+  'releases.title': 'Releases · {owner}/{repo}',
+  'releases.empty': 'Repo này chưa có release nào.',
+  'releases.badge_draft': 'Bản nháp',
+  'releases.badge_prerelease': 'Bản thử nghiệm',
+  'releases.create_title': 'Tạo release mới',
+  'releases.tag_label': 'Tag (vd: v1.0.0)',
+  'releases.name_label': 'Tên release',
+  'releases.notes_label': 'Ghi chú phát hành',
+  'releases.prerelease_label': 'Đây là bản thử nghiệm (pre-release)',
+  'releases.draft_label': 'Lưu dưới dạng bản nháp (draft)',
+  'releases.create_button': 'Tạo',
+  'releases.create_success': 'Đã tạo release mới.',
+  'releases.delete_confirm': 'Xoá release "{name}"?',
+  'releases.delete_success': 'Đã xoá release.',
 };
 
 const _en = <String, String>{
@@ -380,6 +403,13 @@ const _en = <String, String>{
   'browser.upload_success': 'File uploaded to repo successfully!',
   'browser.admin_tooltip': 'Manage collaborators & webhooks',
   'browser.global_search_tooltip': 'Search code across GitHub',
+  'browser.repo_info_tooltip': 'Star, Watch, Fork, Releases',
+  'browser.star_label': 'Star',
+  'browser.watch_label': 'Watch',
+  'browser.fork_label': 'Fork this repo',
+  'browser.fork_hint': 'Create a copy of this repo under your account',
+  'browser.fork_success': 'Fork requested! GitHub needs a few seconds to finish creating it.',
+  'browser.releases_label': 'Releases',
 
   'settings.section_backup': 'Backup & restore',
   'settings.backup_export': 'Export data to file',
@@ -609,4 +639,20 @@ const _en = <String, String>{
   'profile.follow': 'Follow',
   'profile.unfollow': 'Following',
   'profile.open_on_github': 'Open on GitHub',
+
+  // Releases (area #2)
+  'releases.title': 'Releases · {owner}/{repo}',
+  'releases.empty': 'This repo has no releases yet.',
+  'releases.badge_draft': 'Draft',
+  'releases.badge_prerelease': 'Pre-release',
+  'releases.create_title': 'Create new release',
+  'releases.tag_label': 'Tag (e.g. v1.0.0)',
+  'releases.name_label': 'Release name',
+  'releases.notes_label': 'Release notes',
+  'releases.prerelease_label': 'This is a pre-release',
+  'releases.draft_label': 'Save as draft',
+  'releases.create_button': 'Create',
+  'releases.create_success': 'Release created.',
+  'releases.delete_confirm': 'Delete release "{name}"?',
+  'releases.delete_success': 'Release deleted.',
 };
