@@ -15,6 +15,16 @@ jobs:
         with:
           channel: 'stable'
 
+      # Dùng CHUNG 1 debug.keystore cố định cho mọi lần build (thay vì để
+      # Gradle tự sinh keystore ngẫu nhiên mỗi run trên máy ảo CI mới tinh).
+      # Nếu không có bước này, mỗi bản APK có chữ ký khác nhau -> Android bắt
+      # gỡ cài đặt bản cũ trước khi cài bản mới -> mất sạch dữ liệu app (kể cả
+      # token đăng nhập GitHub đã lưu) -> phải đăng nhập lại mỗi lần cập nhật app.
+      - name: Khôi phục debug keystore cố định
+        run: |
+          mkdir -p ~/.android
+          echo "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" | base64 -d > ~/.android/debug.keystore
+
       - name: Tạo scaffold Android (nếu chưa có sẵn trong repo)
         run: |
           if [ ! -d "android" ]; then
