@@ -6,8 +6,11 @@ import 'services/music_service.dart';
 import 'services/log_service.dart';
 import 'services/keep_alive_service.dart';
 import 'services/ci_watch_service.dart';
+import 'services/ci_notification_service.dart';
+import 'services/github_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/repo_list_screen.dart';
+import 'screens/actions_screen.dart';
 import 'widgets/global_download_indicator.dart';
 
 /// Key toàn app để hiện thông báo (vd: "đã tải xong") ngay cả khi tác vụ tải
@@ -46,6 +49,14 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     await AppSettings.instance.load();
     KeepAliveService.instance.init();
     LogService.instance.info('App khởi động');
+    // Khởi tạo plugin notification RIÊNG cho isolate chính - bắt buộc, xem
+    // giải thích ở ci_notification_service.dart. onTap xử lý trường hợp app
+    // vẫn còn sống lúc người dùng bấm vào notification build CI.
+    await CiNotificationService.instance.init(onTap: _openActionsForRepo);
+    // Trường hợp app VỪA được mở lên do bấm notification build CI lúc app đã
+    // bị hệ điều hành giết hẳn (onTap ở trên không bắt được trường hợp này).
+    final launchPayload = await CiNotificationService.instance.getLaunchPayload();
+    if (launchPayload != null) _openActionsForRepo(launchPayload);
     if (AppSettings.instance.musicEnabled && AppSettings.instance.musicUrl.isNotEmpty) {
       await MusicService.instance.play(AppSettings.instance.musicUrl, volume: AppSettings.instance.musicVolume);
     }
@@ -55,6 +66,26 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       // (enable() tự bỏ qua an toàn nếu chưa đăng nhập hoặc chưa ghim repo nào).
       CiWatchService.instance.enable();
     }
+  }
+
+  /// Mở thẳng tới trang Actions của đúng repo khi người dùng bấm vào
+  /// notification "Build xong" (xem CiNotificationService). Cần tự lấy token
+  /// đăng nhập vì lúc này app có thể vừa khởi động lại từ đầu do app đã bị
+  /// hệ điều hành giết hẳn trước đó - chưa có sẵn GithubService nào để dùng.
+  Future<void> _openActionsForRepo(String repoFullName) async {
+    final parts = repoFullName.split('/');
+    if (parts.length != 2) return;
+    final token = await AuthService().getToken();
+    if (token == null) return;
+    // Đợi navigatorKey có Navigator sẵn sàng (vd app vừa khởi động, khung UI
+    // đầu tiên có thể chưa kịp build xong ở đúng frame này).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final nav = navigatorKey.currentState;
+      if (nav == null) return;
+      nav.push(MaterialPageRoute(
+        builder: (_) => ActionsScreen(owner: parts[0], repo: parts[1], githubService: GithubService(token: token)),
+      ));
+    });
   }
 
   /// Mobile không có sự kiện "đóng app" đáng tin cậy (khi hệ điều hành giết

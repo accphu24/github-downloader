@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'log_service.dart';
 import 'github_service.dart';
+import 'ci_notification_service.dart';
 
 /// Hàm callback bắt buộc phải là top-level/static (yêu cầu của flutter_foreground_task)
 /// vì nó được gọi trong 1 isolate riêng do Android tạo ra khi khởi động foreground service.
@@ -24,6 +25,11 @@ class _AppTaskHandler extends TaskHandler {
 
   @override
   Future<void> onStart(DateTime timestamp, TaskStarter starter) async {
+    // Khởi tạo plugin notification RIÊNG cho isolate nền này - bắt buộc, xem
+    // giải thích ở ci_notification_service.dart. Không truyền onTap vì tap
+    // lúc app đã bị giết hẳn được main.dart tự xử lý lúc khởi động lại.
+    await CiNotificationService.instance.init();
+
     final saved = await FlutterForegroundTask.getData<String>(key: 'ci_known_runs');
     if (saved == null) return;
     try {
@@ -84,9 +90,14 @@ class _AppTaskHandler extends TaskHandler {
               _knownRunConclusions[key] = conclusion;
               changed = true;
               final ok = conclusion == 'success';
-              FlutterForegroundTask.updateService(
-                notificationTitle: ok ? '✅ Build xong: $fullName' : '⚠️ Build $conclusion: $fullName',
-                notificationText: run.name,
+              // Gửi notification RIÊNG, có âm thanh (xem ci_notification_service.dart)
+              // - KHÔNG dùng FlutterForegroundTask.updateService() nữa vì kênh đó
+              // Importance.LOW (không kêu) và sẽ đè mất dòng "Đang theo dõi CI/CD"
+              // của thông báo dịch vụ nền cho tới khi bật/tắt lại tính năng.
+              await CiNotificationService.instance.showBuildResult(
+                repoFullName: fullName,
+                success: ok,
+                runName: run.name,
               );
             }
           }
