@@ -49,6 +49,19 @@ jobs:
           cp android_custom/MainActivity.kt android/app/src/main/kotlin/com/tuytam/github_downloader/MainActivity.kt
           cp android_custom/PersistentEngine.kt android/app/src/main/kotlin/com/tuytam/github_downloader/PersistentEngine.kt
 
+      # Nhóm C #3: widget màn hình chính hiện danh sách build CI/CD của repo đã
+      # ghim. Copy cả code Kotlin (cùng thư mục package với MainActivity.kt ở
+      # trên) LẪN resource layout/xml - vì thư mục res/ mặc định của
+      # `flutter create` KHÔNG có sẵn các file layout riêng cho widget.
+      - name: Copy code + resource cho widget CI status (nhóm C #3)
+        run: |
+          cp android_custom/CiStatusWidgetProvider.kt android/app/src/main/kotlin/com/tuytam/github_downloader/CiStatusWidgetProvider.kt
+          cp android_custom/CiStatusWidgetService.kt android/app/src/main/kotlin/com/tuytam/github_downloader/CiStatusWidgetService.kt
+          mkdir -p android/app/src/main/res/layout android/app/src/main/res/xml
+          cp android_custom/res/layout/ci_status_widget.xml android/app/src/main/res/layout/ci_status_widget.xml
+          cp android_custom/res/layout/ci_status_widget_item.xml android/app/src/main/res/layout/ci_status_widget_item.xml
+          cp android_custom/res/xml/ci_status_widget_info.xml android/app/src/main/res/xml/ci_status_widget_info.xml
+
       - name: Thêm CallbackActivity cho OAuth vào AndroidManifest.xml
         run: |
           python3 - <<'EOF'
@@ -113,6 +126,23 @@ jobs:
                   android:exported="false" />
           '''
               content = content.replace("</application>", service_xml + "    </application>")
+
+          # Nhóm C #3: đăng ký widget màn hình chính (receiver + service cấp
+          # dữ liệu cho ListView) - bắt buộc phải khai báo thủ công vì đây là
+          # code Kotlin tự viết, không phải plugin tự động merge manifest.
+          if 'CiStatusWidgetProvider' not in content:
+              widget_xml = '''        <receiver android:name="com.tuytam.github_downloader.CiStatusWidgetProvider" android:exported="true">
+                  <intent-filter>
+                      <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                  </intent-filter>
+                  <meta-data android:name="android.appwidget.provider" android:resource="@xml/ci_status_widget_info" />
+              </receiver>
+              <service
+                  android:name="com.tuytam.github_downloader.CiStatusWidgetService"
+                  android:permission="android.permission.BIND_REMOTEVIEWS"
+                  android:exported="false" />
+          '''
+              content = content.replace("</application>", widget_xml + "    </application>")
 
           # Thêm taskAffinity="" cho MainActivity để tránh lỗi quay vòng khi redirect từ trình duyệt
           if 'android:name=".MainActivity"' in content and 'taskAffinity' not in content.split('android:name=".MainActivity"')[1].split('>')[0]:

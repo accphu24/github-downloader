@@ -7,6 +7,7 @@ import 'services/log_service.dart';
 import 'services/keep_alive_service.dart';
 import 'services/ci_watch_service.dart';
 import 'services/ci_notification_service.dart';
+import 'services/widget_service.dart';
 import 'services/github_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/repo_list_screen.dart';
@@ -66,6 +67,9 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       // (enable() tự bỏ qua an toàn nếu chưa đăng nhập hoặc chưa ghim repo nào).
       CiWatchService.instance.enable();
     }
+    // Không await - cập nhật widget màn hình chính chạy nền, không chặn app
+    // khởi động (xem WidgetService.refresh()).
+    WidgetService.refresh();
   }
 
   /// Mở thẳng tới trang Actions của đúng repo khi người dùng bấm vào
