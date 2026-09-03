@@ -133,6 +133,41 @@ jobs:
             sed -i 's/id("org.jetbrains.kotlin.android") version "[^"]*"/id("org.jetbrains.kotlin.android") version "1.9.24"/' android/settings.gradle.kts
           fi
 
+      # Bắt buộc phải có bước này khi dùng flutter_local_notifications, nếu không
+      # Gradle báo lỗi "requires core library desugaring to be enabled" và build
+      # thất bại hẳn. Thêm bằng cách GHÉP THÊM 1 khối android{}/dependencies{} mới
+      # vào cuối file (Gradle tự gộp các khối cùng tên) thay vì sửa khối có sẵn -
+      # tránh rủi ro sai lệch vị trí chèn giữa các phiên bản template khác nhau.
+      - name: Bật core library desugaring (bắt buộc cho flutter_local_notifications)
+        run: |
+          if [ -f android/app/build.gradle.kts ]; then
+            {
+              echo ""
+              echo "android {"
+              echo "    compileOptions {"
+              echo "        isCoreLibraryDesugaringEnabled = true"
+              echo "    }"
+              echo "}"
+              echo ""
+              echo "dependencies {"
+              echo "    coreLibraryDesugaring(\"com.android.tools:desugar_jdk_libs:2.1.4\")"
+              echo "}"
+            } >> android/app/build.gradle.kts
+          elif [ -f android/app/build.gradle ]; then
+            {
+              echo ""
+              echo "android {"
+              echo "    compileOptions {"
+              echo "        coreLibraryDesugaringEnabled true"
+              echo "    }"
+              echo "}"
+              echo ""
+              echo "dependencies {"
+              echo "    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'"
+              echo "}"
+            } >> android/app/build.gradle
+          fi
+
       - name: Cài dependencies
         run: flutter pub get
 
