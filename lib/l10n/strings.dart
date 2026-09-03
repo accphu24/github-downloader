@@ -299,6 +299,20 @@ const _vi = <String, String>{
   'codesearch.hint_qualifiers': 'Nhập từ khoá để tìm code trên toàn GitHub.\nCó thể dùng qualifier như "language:dart", "repo:owner/name", "user:tên".',
   'codesearch.no_results': 'Không tìm thấy kết quả nào.',
 
+  // Tìm kiếm gộp trên các repo đã ghim (nhóm C #1)
+  'pinnedsearch.title': 'Tìm trong repo đã ghim',
+  'pinnedsearch.tooltip': 'Tìm gộp trên repo đã ghim',
+  'pinnedsearch.tab_code': 'Code',
+  'pinnedsearch.tab_files': 'File/Thư mục',
+  'pinnedsearch.code_hint': 'Tìm code trong các repo đã ghim...',
+  'pinnedsearch.code_hint_qualifiers': 'Nhập từ khoá để tìm code trong {count} repo đã ghim.\nCó thể dùng thêm qualifier như "language:dart", "path:lib/".',
+  'pinnedsearch.files_hint': 'Tìm tên file/thư mục trong các repo đã ghim...',
+  'pinnedsearch.files_hint_empty': 'Nhập từ khoá rồi nhấn Enter để tìm trong {count} repo đã ghim.',
+  'pinnedsearch.no_results': 'Không tìm thấy kết quả nào.',
+  'pinnedsearch.no_pinned_title': 'Chưa ghim repo nào',
+  'pinnedsearch.no_pinned_body': 'Hãy ghim (bấm biểu tượng ngôi sao) ít nhất 1 repo ở màn danh sách để dùng tính năng tìm kiếm gộp.',
+  'pinnedsearch.result_count': '{count} kết quả trong {repo}',
+
   // Cài đặt repo: mô tả/visibility/topics/xoá (mảng #6)
   'admin.tab_settings': 'Cài đặt',
   'admin.description_label': 'Mô tả repo',
@@ -630,6 +644,20 @@ const _en = <String, String>{
   'codesearch.hint': 'Search code across GitHub...',
   'codesearch.hint_qualifiers': 'Enter a keyword to search code across all of GitHub.\nYou can use qualifiers like "language:dart", "repo:owner/name", "user:name".',
   'codesearch.no_results': 'No results found.',
+
+  // Combined search across pinned repos (group C #1)
+  'pinnedsearch.title': 'Search pinned repos',
+  'pinnedsearch.tooltip': 'Combined search across pinned repos',
+  'pinnedsearch.tab_code': 'Code',
+  'pinnedsearch.tab_files': 'Files/Folders',
+  'pinnedsearch.code_hint': 'Search code across pinned repos...',
+  'pinnedsearch.code_hint_qualifiers': 'Enter a keyword to search code across {count} pinned repos.\nYou can add qualifiers like "language:dart", "path:lib/".',
+  'pinnedsearch.files_hint': 'Search file/folder names across pinned repos...',
+  'pinnedsearch.files_hint_empty': 'Type a keyword and press Enter to search across {count} pinned repos.',
+  'pinnedsearch.no_results': 'No results found.',
+  'pinnedsearch.no_pinned_title': 'No pinned repos yet',
+  'pinnedsearch.no_pinned_body': 'Pin (tap the star icon) at least 1 repo on the repo list screen to use combined search.',
+  'pinnedsearch.result_count': '{count} results in {repo}',
 
   // Repo settings: description/visibility/topics/delete (area #6)
   'admin.tab_settings': 'Settings',

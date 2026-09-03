@@ -1191,6 +1191,41 @@ class GithubService {
     });
   }
 
+  /// Tìm code trên NHIỀU repo đã ghim CÙNG LÚC, dùng cú pháp "repo:a OR repo:b"
+  /// của GitHub để gộp thành 1 request DUY NHẤT - quan trọng vì Search API giới
+  /// hạn rất chặt (10 request/phút), gọi song song từng repo sẽ dính rate limit
+  /// ngay nếu ghim từ ~10 repo trở lên.
+  Future<List<CodeSearchResult>> searchCodeAcrossRepos(String query, Set<String> repoFullNames) async {
+    if (repoFullNames.isEmpty) return [];
+    final repoQualifier = repoFullNames.map((r) => 'repo:$r').join(' OR ');
+    final fullQuery = '$query ($repoQualifier)';
+    // GitHub giới hạn cứng 256 ký tự/query - báo lỗi rõ ràng thay vì để GitHub trả 422 khó hiểu.
+    if (fullQuery.length > 256) {
+      throw Exception(
+          'Bạn đang ghim quá nhiều repo (tên repo quá dài khi gộp lại), GitHub giới hạn 256 ký tự/lần tìm. Hãy bỏ ghim bớt vài repo rồi thử lại.');
+    }
+    return searchCodeGlobal(fullQuery);
+  }
+
+  /// Tìm tên file/thư mục trên NHIỀU repo đã ghim CÙNG LÚC, chạy SONG SONG vì
+  /// Git Trees API dùng rate limit chung (~5000/giờ) chứ không bị giới hạn chặt
+  /// như Search API. Repo nào lỗi (rỗng, mất quyền truy cập...) sẽ bị bỏ qua
+  /// thay vì làm hỏng kết quả của các repo còn lại.
+  Future<Map<String, List<GithubFile>>> searchFilesAcrossRepos(String query, Set<String> repoFullNames) async {
+    final result = <String, List<GithubFile>>{};
+    await Future.wait(repoFullNames.map((fullName) async {
+      final parts = fullName.split('/');
+      if (parts.length != 2) return;
+      try {
+        final files = await searchFilesInRepo(parts[0], parts[1], query);
+        if (files.isNotEmpty) result[fullName] = files;
+      } catch (_) {
+        // Bỏ qua repo lỗi, không chặn kết quả các repo khác.
+      }
+    }));
+    return result;
+  }
+
   // ================== #6: Tạo/xoá repo, đổi cài đặt ==================
 
   /// Tạo repo mới cho TÀI KHOẢN CÁ NHÂN đang đăng nhập (không hỗ trợ tạo

@@ -9,6 +9,7 @@ import 'login_screen.dart';
 import 'settings_screen.dart';
 import 'notifications_screen.dart';
 import 'gists_screen.dart';
+import 'pinned_search_screen.dart';
 import '../services/ci_watch_service.dart';
 
 /// Cache đơn giản trong bộ nhớ, tồn tại trong suốt phiên chạy app.
@@ -192,6 +193,10 @@ class _RepoListScreenState extends State<RepoListScreen> {
 
   void _openGists() {
     Navigator.push(context, MaterialPageRoute(builder: (_) => GistsScreen(githubService: _githubService!)));
+  }
+
+  void _openPinnedSearch() {
+    Navigator.push(context, MaterialPageRoute(builder: (_) => PinnedSearchScreen(githubService: _githubService!)));
   }
 
   /// Mở dialog tạo repo mới cho tài khoản cá nhân, rồi mở luôn repo vừa tạo
@@ -507,6 +512,7 @@ class _RepoListScreenState extends State<RepoListScreen> {
             child: IconButton(icon: const Icon(Icons.notifications_rounded), tooltip: t('notif.tooltip'), onPressed: _openNotifications),
           ),
           IconButton(icon: const Icon(Icons.edit_rounded), tooltip: t('repolist.manual_entry_tooltip'), onPressed: _openManualEntry),
+          IconButton(icon: const Icon(Icons.manage_search_rounded), tooltip: t('pinnedsearch.tooltip'), onPressed: _openPinnedSearch),
           IconButton(icon: const Icon(Icons.code_rounded), tooltip: t('repolist.gists_tooltip'), onPressed: _openGists),
           IconButton(icon: const Icon(Icons.refresh_rounded), onPressed: () => _loadRepos()),
           IconButton(icon: const Icon(Icons.settings_rounded), tooltip: t('repolist.settings_tooltip'), onPressed: _openSettings),
