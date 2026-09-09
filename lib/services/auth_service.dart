@@ -7,7 +7,7 @@ import 'log_service.dart';
 class AuthService {
   static const String clientId = 'Ov23liwbI2dUbJoBSMAv';
 
-  static const String backendUrl = 'https://oauth-backend-0a8n.onrender.com';
+  static const String backendUrl = 'https://oauth-backend-production-99e7.up.railway.app';
 
   static const String callbackScheme = 'githubdownloader';
   static const String redirectUri = '$callbackScheme://callback';
@@ -44,8 +44,11 @@ class AuthService {
       );
 
       if (response.statusCode != 200) {
-        LogService.instance.error('Đăng nhập thất bại: backend trả mã ${response.statusCode}');
-        return 'Backend lỗi ${response.statusCode}: ${response.body}';
+        final location = response.headers['location'] ?? '(không có)';
+        LogService.instance.error(
+          'Đăng nhập thất bại: backend trả mã ${response.statusCode}, location=$location',
+        );
+        return 'Backend lỗi ${response.statusCode} (redirect tới: $location): ${response.body}';
       }
 
       final data = jsonDecode(response.body);
